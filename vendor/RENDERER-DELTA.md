@@ -1,0 +1,43 @@
+# Renderer delta
+
+This folder is **not** a third-party library tree. The copied generators
+(`render_codecity.py`, `render_heatmap.py`, `render_combined.py`) live at the
+**repository root** — they *are* the city. This file is the log of that copy:
+which revision of Victor's Java Code City we took, and every intentional
+difference, so nobody “fixes” `_district` back to the Java rule.
+
+Upstream: [victorrentea/code-city](https://github.com/victorrentea/code-city)
+at git SHA `81cfda7`
+Copied: 2026-09-17
+
+We copy rather than import because `_district` in the guide collapses every
+same-named folder to one district. Do not edit the Java repo.
+
+## `render_codecity.py`
+
+1. Import `district_of` / `building_name` from `citylib`.
+2. `_district(path)` → full dotted folder path, not parent-folder-name / `java/` segment.
+3. Building `name` strips `.ts/.tsx/.js/…`, not only `.java`.
+4. View labels: Files / Folders / Packages (values still `classes` / `packages` / `modules`).
+5. v1 defaults: AREA = file size (`bytes`), HEIGHT = LOC (`lines`), COLOR = commits `/kloc` + `lg`.
+6. Overview preset: `bytes`, `lines`, `commits` with kloc/log on colour. Complexity is not a v1 metric.
+7. Public copy (ADR 0007): clone URL `https://github.com/balazsbohonyi/code-city-js`;
+   origin + howto credit Wettel and Victor's Java city as the guide; recipe is
+   `python generate.py` for JS/TS (React/Vue/none). Filter suggestions from
+   `citylib.filter_suggestions` (folders, `use*`, CamelCase prefixes) — not
+   `*Service`. Hover "files" not "Java files". Folders knob, not Packages.
+8. TSV reads and `codecity.html` write are UTF-8. `Path.write_text()` without
+   `encoding=` uses the Windows locale codec (cp1252 on Python 3.14), which
+   cannot encode the ⌘/⌥/⇧ in the page.
+
+## `render_heatmap.py`
+
+1. Scatter labels use `building_name` instead of stripping `.java`.
+2. Read the TSV and write `codemap.html` as UTF-8. `generate.py` defaults
+   `HEATMAP_OPEN_IN=vscode`, which injects ⌘ (U+2318) into the page; locale
+   `open()` crashed the vuejs/core run before the city renderer started.
+
+## `render_combined.py`
+
+Write `combined.html` as UTF-8 (TITLE is a repo name; keep the three
+writers on one encoding).

@@ -1,0 +1,24 @@
+ai-docs/
+AGENTS.md
+
+# Generated cities — never commit these
+.codecity/
+*.html
+
+# Python
+__pycache__/
+.pylibs/
+.venv/
+venv/
+*.pyc
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# JS (if we add Node later)
+node_modules/
+dist/
+coverage/
