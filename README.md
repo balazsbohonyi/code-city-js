@@ -2,8 +2,8 @@
 
 Turn any git checkout of **JavaScript / TypeScript** into a **3-D city you can
 walk around**: one building per file, districts per folder, its height and
-colour driven by whatever you want to see — size, churn, bug-fixes, and
-(later) complexity and coupling. Plus the 2-D **codemap** it ships with: a
+colour driven by whatever you want to see — size, cognitive complexity, churn,
+bug-fixes, and (later) coupling. Plus the 2-D **codemap** it ships with: a
 treemap next to a log–log scatter.
 
 This is a port of [Victor Rentea's Code City](https://github.com/victorrentea/code-city)
@@ -17,22 +17,26 @@ disk.
 <img src="docs/vscode-city.jpg" alt="Visual Studio Code as a Code City" width="100%">
 
 *Visual Studio Code: 4507 source files, 580 folders — one run, one page (~7 MB).
-Height is lines of code, colour is commits per KLOC on a log ramp. Cognitive
-complexity, coupling roads and CRAP are later versions, not faked from LOC; on
-this plate a plain hover costs 9.8 ms worst (budget under 50 ms).*
+Height is cognitive complexity (Sonar-style via tree-sitter), colour is
+commits per KLOC on a log ramp. Coupling roads and CRAP are later versions,
+not faked from LOC. Plain hover worst 7.5 ms on the v2 plate (budget under
+50 ms).*
 
 ## Quick start
 
 ```bash
 git clone https://github.com/balazsbohonyi/code-city-js
+pip install -r code-city-js/requirements.txt   # once: tree-sitter JS/TS grammars
 python code-city-js/generate.py /path/to/your-repo
 # Windows:  start  your-repo\.codecity\codecity.html
 # macOS:    open   your-repo/.codecity/codecity.html
 # Linux:    xdg-open your-repo/.codecity/codecity.html
 ```
 
-That is the whole configuration: the repo to analyse. It must be a git
-checkout (history is half the metrics). Output lands in `REPO/.codecity/`:
+Install the small Python deps **once** per environment (`requirements.txt`
+only changes when the complexity grammars do). Regenerating a city is just
+`generate.py` again. The repo must be a git checkout (history is half the
+metrics). Output lands in `REPO/.codecity/`:
 
 | File | What it is |
 | --- | --- |
@@ -78,21 +82,25 @@ extreme files don't wash out the rest.
 **Open a file in your editor:** ⌘/Ctrl-double-click a building. The default
 is VS Code (`vscode://file/…`). Unset `HEATMAP_OPEN_IN` to disable it.
 
-| Column | Meaning | v1 |
+| Column | Meaning | Now |
 | --- | --- | --- |
 | `bytes` / `lines` | file size and line count | computed |
 | `commits` | non-merge commits that touched the file (full history) | computed |
 | `bug_commits` | of those, commits whose subject matches `fix` / `fixed` / `fixes` / `bugfix` (Conventional Commits and the plain “Fix …” verb) | computed |
 | `committers` | distinct author emails that touched the file | computed |
 | `cochange_out` | of the commits that touched this file, the share that also reached outside its folder, weighted by how far out | computed |
-| `cognitive_complexity` | Sonar-style cognitive complexity, summed over functions | reserved (0) |
+| `cognitive_complexity` | Sonar-style cognitive complexity, summed over functions in the file (tree-sitter). JS/TS/JSX/TSX, plus Vue `<script>` / `<script setup>` — not templates. `??` counts in boolean groups (intentional); `?.` does not. | computed |
 | `fan_in` / `fan_out` | how many repo files import this file / it imports (internal only) | reserved (0) |
 | `coverage` / `crap_max` / `crap_load` | line coverage and CRAP from a test run | reserved (absent, not zero) |
 
 Reserved columns are in the TSV so the renderer’s schema matches the Java
-guide. They are **not** faked from LOC. Until they are filled, pick HEIGHT =
-lines of code and COLOR = commits per KLOC — that is already a readable
-churn map.
+guide. They are **not** faked from LOC. Default HEIGHT is cognitive
+complexity; COLOR = commits per KLOC is still the churn reading.
+
+**Presets.** **Overview** is absolute complexity (tall = hard to follow).
+**Complexity density** puts `/kloc` on height as well — complexity *per
+thousand lines* — so large complex files shrink toward the pack and the
+skyline looks flatter; that is intentional, not a missing score.
 
 **Absence is not zero.** When coverage/CRAP exist they will be missing on
 files the report never measured, and those buildings will be grey, not “0%
@@ -144,21 +152,27 @@ Unset `HEATMAP_PRUNE` is the whole-tree city.
 
 ## Pipeline
 
+```bash
+pip install -r requirements.txt   # tree-sitter JS/TS grammars
+python generate.py /path/to/your-repo
+```
+
 | Step | Script | Produces |
 | --- | --- | --- |
-| 1 | `build_heatmap.py` | `codemap.tsv` (git history + file size) + `codemap-packages.tsv` + `codemap-modules.tsv` + `cochange-edges.tsv` |
-| 2 | `render_heatmap.py` | `codemap.html` |
-| 3 | `render_codecity.py` | `codecity.html` |
-| 4 | `render_combined.py` | `combined.html` |
+| 1 | `compute_complexity.py` | `complexity-per-file.tsv` (Sonar-style scores) |
+| 2 | `build_heatmap.py` | `codemap.tsv` (git history + size + complexity join) + packages/modules + `cochange-edges.tsv` |
+| 3 | `render_heatmap.py` | `codemap.html` |
+| 4 | `render_codecity.py` | `codecity.html` |
+| 5 | `render_combined.py` | `combined.html` |
 
-`citylib.py` is the JS/TS front of step 1: which files count, how a folder
-becomes a district, how a `package.json` becomes a module, and which globs
-the filter box offers for *this* city (not a hard-coded `*Service` or a
-PFA-only `..lib.* · use*` hint).
+`citylib.py` is the JS/TS front of inclusion: which files count, how a folder
+becomes a district, how a `package.json` becomes a module, which bucket a
+file uses in the 2-D treemap (repo-root files under `root`, so Plotly never
+sees duplicate ids), and which globs the filter box offers for *this* city
+(not a hard-coded `*Service` or a PFA-only `..lib.* · use*` hint).
 
-Later versions add a complexity walker (tree-sitter JS/TS), coupling edges
-(dependency-cruiser), and CRAP from Istanbul/c8/Vitest coverage. Those are
-not in this tree yet.
+Later versions add coupling edges (dependency-cruiser) and CRAP from
+Istanbul/c8/Vitest coverage.
 
 ## CodeCity
 
@@ -187,8 +201,8 @@ What this port changes about the *picture*:
 
 - a **file** is the building, a **folder** is the district, a **package.json**
   is the module;
-- the default reading is **area = file size, height = lines, colour =
-  commits per KLOC** (log), because complexity is not scored yet;
+- the default reading is **area = file size, height = cognitive complexity,
+  colour = commits per KLOC** (log);
 - the filter dropdown offers folder and name globs that actually occur in
   JS/TS trees (`..components.*`, `use*`, `*Dialog`), not `*Service`.
 
@@ -200,8 +214,8 @@ drain to grey; files that **grew** carry dashed marks at the old height and
 the old footprint.
 
 **Coupling streets (⌥) and co-change (Shift)** are in the page. Co-change
-has data in v1. Coupling roads have nothing to draw until fan-in/out is
-computed — the overlay is absent rather than a plate of invented wires.
+has data. Coupling roads have nothing to draw until fan-in/out is computed —
+the overlay is absent rather than a plate of invented wires.
 
 ## The renderer
 
@@ -219,8 +233,9 @@ not “fix” `_district` back to the Java rule. Do not edit Victor's tree.
 The same upstream also ships **`hover_cost.py`** and **`profile_city.py`** —
 Playwright probes for the hover budget. They are vendored here too
 (byte-identical; see the delta log). A large city is not “done” until plain
-hover worst stays under **50 ms**; the VS Code plate above clears that
-(9.8 ms worst).
+hover worst stays under **50 ms**; the current VS Code plate clears that
+(**7.5 ms** worst on the complexity city; the earlier size/churn close was
+9.8 ms).
 
 ```bash
 pip install playwright && playwright install chromium
@@ -228,9 +243,9 @@ python hover_cost.py path/to/codecity.html my-repo
 python profile_city.py path/to/codecity.html my-repo
 ```
 
-v1 is proven on a large JS/TS repo (VS Code: 4507 files). A TypeScript
-rewrite of the renderer is allowed; until then, a documented one-function
-change beats a new engine.
+Large-repo proof includes VS Code (thousands of files). A TypeScript rewrite
+of the renderer is allowed; until then, a documented one-function change
+beats a new engine.
 
 
 ## Configuration (env vars)
@@ -256,6 +271,6 @@ written to draw the Spring Framework as a city and recovered, parameterized
 and documented there.
 
 This repo redoes the **language front-end** (what a building is, which files
-count, how git history joins them) and keeps the **city** until there is a
-reason not to. v1 is size + git history. Complexity, coupling and CRAP are
-the next versions, not silent zeros.
+count, how git history joins them, cognitive complexity via tree-sitter) and
+keeps the **city** until there is a reason not to. Coupling and CRAP are
+later versions, not silent zeros.

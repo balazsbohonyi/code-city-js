@@ -11,7 +11,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from citylib import building_name  # noqa: E402
+from citylib import building_name, treemap_module  # noqa: E402
 
 _here = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.abspath(os.environ.get("HEATMAP_OUT") or os.environ.get("HEATMAP_REPO") or _here)
@@ -80,8 +80,10 @@ with open(TSV, encoding="utf-8") as f:
             "instability": (fan_out / (fan_in + fan_out)) if (fan_in + fan_out) else 0.0,
         })
 
-# Treemap data: path = ["modules", module, filename]. Use file basename to keep labels short.
-modules = sorted({r["path"].split("/", 1)[0] for r in rows})
+# Treemap data: top folder (or "root" for repo-root files) > file.
+# See citylib.treemap_module — root files must not share their id with the
+# module row or Plotly blanks the whole treemap.
+modules = sorted({treemap_module(r["path"]) for r in rows})
 ids, labels, parents, customdata, hovertemplates = [], [], [], [], []
 # One parallel array per metric (module rows carry 0 so they add no area/colour),
 # indexed to line up with ids — the client restyles values/colours from these.
@@ -103,7 +105,7 @@ for m in modules:
         metrics[k].append(0)
 
 for r in rows:
-    mod = r["path"].split("/", 1)[0]
+    mod = treemap_module(r["path"])
     basename = r["path"].rsplit("/", 1)[-1]
     node_id = r["path"]
     ids.append(node_id)
@@ -238,6 +240,9 @@ function applyColour() {
 
 Plotly.newPlot('treemap', [{
   type: 'treemap',
+  // Parents carry value 0 (grouping only). 'remainder' = parent value is extra
+  // area, not the sum of children — required so zero-valued module rows work.
+  branchvalues: 'remainder',
   ids: TREE.ids,
   labels: TREE.labels,
   parents: TREE.parents,

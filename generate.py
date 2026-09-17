@@ -6,8 +6,8 @@
 REPO defaults to this process's git toplevel; OUT defaults to REPO/.codecity.
 Both are the friendlier spellings of HEATMAP_REPO / HEATMAP_OUT.
 
-v1 walks sources, joins git history, and renders. It does not parse JS for
-complexity, coupling or CRAP — those columns stay zero or absent.
+Walks sources for Sonar-style cognitive complexity, joins git history, and
+renders. Coupling and CRAP stay zero / absent until later versions.
 """
 from __future__ import annotations
 
@@ -74,7 +74,10 @@ def main(argv: list[str]) -> int:
     print(f"repo:  {repo}", flush=True)
     print(f"out:   {out}", flush=True)
 
-    print("[1/4] join git history + size into codemap.tsv...", flush=True)
+    print("[1/5] cognitive complexity (tree-sitter JS/TS + Vue script)...", flush=True)
+    _run("compute_complexity.py", env)
+
+    print("[2/5] join git history + size into codemap.tsv...", flush=True)
     log = _run("build_heatmap.py", env)
 
     tsv = out / "codemap.tsv"
@@ -98,13 +101,13 @@ def main(argv: list[str]) -> int:
         f"{files} source JS/TS files · {commits} commits walked · {bugfix} bug-fix commits."
     )
 
-    print("[2/4] render interactive HTML...", flush=True)
+    print("[3/5] render interactive HTML...", flush=True)
     _run("render_heatmap.py", env)
 
-    print("[3/4] render Code City HTML...", flush=True)
+    print("[4/5] render Code City HTML...", flush=True)
     _run("render_codecity.py", env, {"HEATMAP_TITLE": env["CODECITY_TITLE"]})
 
-    print("[4/4] render combined side-by-side...", flush=True)
+    print("[5/5] render combined side-by-side...", flush=True)
     _run("render_combined.py", env)
 
     print(f"done -> {out / 'codemap.html'}")

@@ -1568,8 +1568,8 @@ html = """<!doctype html>
 
     <span class="knob">Height</span>
     <select id="heightMetric">
-      <option value="lines" selected>lines of code (LOC)</option>
-      <option value="cognitive_complexity">cognitive complexity</option>
+      <option value="lines">lines of code (LOC)</option>
+      <option value="cognitive_complexity" selected>cognitive complexity</option>
       <option value="bug_commits">bugfix commits</option>
       <option value="commits">total commits</option>
       <option value="committers">committers</option>
@@ -5764,8 +5764,8 @@ function syncMetricNotes() {
 // only route to a metric. Area is LOC across the board now, because that is the surface
 // the city opens on and a preset that silently swapped it to bytes read as a bug.
 const PRESETS = [
-  { dot: "#2563eb", label: "Overview — size, LOC, churn per KLOC",
-    metrics: ["bytes", "lines", "commits"], kloc: [false, false, true], log: true },
+  { dot: "#2563eb", label: "Overview — size, complexity, churn per KLOC",
+    metrics: ["bytes", "cognitive_complexity", "commits"], kloc: [false, false, true], log: true },
   { dot: "#dc2626", label: "Hotspots — big files that churn and break",
     metrics: ["lines", "commits", "bug_commits"], kloc: [false, false, false], log: true },
   { dot: "#7c3aed", label: "Complexity density — cognitive load per KLOC",

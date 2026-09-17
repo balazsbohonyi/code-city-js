@@ -166,6 +166,16 @@ def building_name(rel: str) -> str:
     return name
 
 
+def treemap_module(rel: str) -> str:
+    """Top-level bucket for the 2-D Plotly treemap.
+
+    Repo-root files (`eslint.config.js`) must not use their own name as the
+    module id — that duplicates the file node and blanks the treemap.
+    """
+    rel = posix_path(rel)
+    return rel.split("/", 1)[0] if "/" in rel else "root"
+
+
 def _is_package_json(fn: str) -> bool:
     return fn == "package.json"
 

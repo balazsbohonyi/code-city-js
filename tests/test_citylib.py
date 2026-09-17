@@ -16,6 +16,7 @@ from citylib import (
     filter_suggestions,
     posix_path,
     repo_rel_parts,
+    treemap_module,
 )
 
 
@@ -90,6 +91,19 @@ def test_district_is_full_folder_not_parent_name():
     assert district_of("packages/ui/src/components/Button.tsx") == "packages.ui.src.components"
     assert district_of("lib/express.js") == "lib"
     assert district_of("index.js") == "root"
+
+
+def test_treemap_module_root_files_do_not_self_parent():
+    assert treemap_module("eslint.config.js") == "root"
+    assert treemap_module("src/app.ts") == "src"
+    assert treemap_module("extensions/foo/bar.ts") == "extensions"
+    # Building the Plotly id/parent lists must not collide for root files.
+    paths = ["eslint.config.js", "src/app.ts", "gulpfile.mjs"]
+    modules = sorted({treemap_module(p) for p in paths})
+    ids = list(modules) + paths
+    parents = [""] * len(modules) + [treemap_module(p) for p in paths]
+    assert len(ids) == len(set(ids))
+    assert all(ids[i] != parents[i] for i in range(len(ids)))
 
 
 def test_building_name_strips_longest_suffix():

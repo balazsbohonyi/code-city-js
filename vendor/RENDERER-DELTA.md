@@ -19,8 +19,10 @@ same-named folder to one district. Do not edit the Java repo.
 2. `_district(path)` → full dotted folder path, not parent-folder-name / `java/` segment.
 3. Building `name` strips `.ts/.tsx/.js/…`, not only `.java`.
 4. View labels: Files / Folders / Packages (values still `classes` / `packages` / `modules`).
-5. v1 defaults: AREA = file size (`bytes`), HEIGHT = LOC (`lines`), COLOR = commits `/kloc` + `lg`.
-6. Overview preset: `bytes`, `lines`, `commits` with kloc/log on colour. Complexity is not a v1 metric.
+5. Defaults: AREA = file size (`bytes`), HEIGHT = cognitive complexity (v2;
+   was LOC in v1), COLOR = commits `/kloc` + `lg`.
+6. Overview preset: `bytes`, `cognitive_complexity`, `commits` with kloc/log on
+   colour (v2; v1 used `lines` for height until complexity was filled).
 7. Public copy (ADR 0007): clone URL `https://github.com/balazsbohonyi/code-city-js`;
    origin + howto credit Wettel and Victor's Java city as the guide; recipe is
    `python generate.py` for JS/TS (React/Vue/none). Filter suggestions from
@@ -43,6 +45,11 @@ same-named folder to one district. Do not edit the Java repo.
 2. Read the TSV and write `codemap.html` as UTF-8. `generate.py` defaults
    `HEATMAP_OPEN_IN=vscode`, which injects ⌘ (U+2318) into the page; locale
    `open()` crashed the vuejs/core run before the city renderer started.
+3. Treemap module bucket via `citylib.treemap_module`: repo-root files go under
+   `root` instead of using their filename as the module id (duplicate /
+   parent===id blanked the Plotly treemap while the scatter still drew).
+4. Treemap `branchvalues: 'remainder'` so module rows with value `0` stay
+   grouping-only.
 
 ## `render_combined.py`
 

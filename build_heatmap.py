@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Join git history and file size into the TSV the city renderer eats.
 
-v1 does not parse JS. Complexity, fan-in/out and CRAP columns are present so
-the schema matches the Java guide, and they are zeros or empty rather than
-guesses. Co-change comes out of the same history walk, so it is free and we
-keep it.
+Complexity comes from `complexity-per-file.tsv` when present (v2 /
+`compute_complexity.py`); otherwise it stays 0. Fan-in/out and CRAP columns
+are still zeros or empty. Co-change comes out of the same history walk, so it
+is free and we keep it.
 
 Path separators are normalised to `/` before anything is keyed: git log on
 Windows still emits POSIX paths, os.walk does not.
@@ -60,6 +60,7 @@ else:
 BUG_SUBJECT_RE = re.compile(_bug_subj_src, re.IGNORECASE) if _bug_subj_src else None
 
 OUT_FILE = os.path.join(OUT_DIR, "codemap.tsv")
+COMPLEXITY_FILE = os.path.join(OUT_DIR, "complexity-per-file.tsv")
 
 bug_ids = set()
 if os.path.exists(BUG_FILE):
@@ -278,6 +279,21 @@ for root, dirs, files in os.walk(REPO_DIR):
 
 print(f"found {len(source_files)} current non-test JS/TS source files", file=sys.stderr)
 
+complexity = {}
+if os.path.exists(COMPLEXITY_FILE):
+    with open(COMPLEXITY_FILE, encoding="utf-8") as f:
+        next(f, None)  # header
+        for line in f:
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) >= 2:
+                try:
+                    complexity[posix_path(parts[0])] = int(parts[1])
+                except ValueError:
+                    continue
+    print(f"loaded complexity for {len(complexity)} files", file=sys.stderr)
+else:
+    print(f"WARN: {COMPLEXITY_FILE} not found, complexity will be 0", file=sys.stderr)
+
 FILE_HEADER = (
     "path\tbytes\tlines\tcommits\tbug_commits\tcommits_per_kloc\tbugs_per_kloc\t"
     "bugs_per_commit\tcognitive_complexity\tcomplexity_per_kloc\tfan_in\tfan_out\t"
@@ -297,14 +313,14 @@ for ap in source_files:
     commits = commits_per_file.get(rel, 0)
     bug_commits = bug_commits_per_file.get(rel, 0)
     committers = len(committers_per_file.get(rel, ()))
-    cog = 0
+    cog = complexity.get(rel, 0)
     fi = 0
     fo = 0
     kloc = lines / 1000.0 if lines else 0
     commits_per_kloc = (commits / kloc) if kloc else 0
     bugs_per_kloc = (bug_commits / kloc) if kloc else 0
     bugs_per_commit = (bug_commits / commits) if commits else 0
-    cog_per_kloc = 0.0
+    cog_per_kloc = (cog / kloc) if kloc else 0.0
     rows.append((
         rel, sz, lines, commits, bug_commits, commits_per_kloc, bugs_per_kloc,
         bugs_per_commit, cog, cog_per_kloc, fi, fo, committers,
