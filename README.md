@@ -14,6 +14,13 @@ Every output is a **single self-contained HTML file** — all data inlined,
 libraries from a CDN, no server. Mail it, publish it on Pages, open it from
 disk.
 
+<img src="docs/vscode-city.jpg" alt="Visual Studio Code as a Code City" width="100%">
+
+*Visual Studio Code: 4507 source files, 580 folders — one run, one page (~7 MB).
+Height is lines of code, colour is commits per KLOC on a log ramp. Cognitive
+complexity, coupling roads and CRAP are later versions, not faked from LOC; on
+this plate a plain hover costs 9.8 ms worst (budget under 50 ms).*
+
 ## Quick start
 
 ```bash
@@ -115,21 +122,22 @@ that happens to live under `…/playground/vite`.
 *inside the repo*. Rebuild after setting it.
 
 ```bash
-# bash / Git Bash
-HEATMAP_PRUNE=playground,docs python code-city-js/generate.py /path/to/vite
+# bash / Git Bash — Vite product city (drop playground, docs, and create-vite templates)
+HEATMAP_PRUNE=playground,docs,create-vite python code-city-js/generate.py /path/to/vite
 ```
 
 ```powershell
 # PowerShell
-$env:HEATMAP_PRUNE = "playground,docs"
+$env:HEATMAP_PRUNE = "playground,docs,create-vite"
 python code-city-js/generate.py C:\path\to\vite
 ```
 
 Useful names: `playground`, `playgrounds`, `examples`, `docs`,
-`packages-private`. The name has to be a directory segment (`playground`),
-not a glob and not a repo-relative prefix. `packages/create-vite/template-*`
-does not go away because you pruned `playground` — those templates live
-under `create-vite`. Add another name if you want them gone too.
+`create-vite`, `packages-private`. The name has to be a directory segment
+(`playground`), not a glob and not a repo-relative prefix.
+`packages/create-vite/template-*` does **not** go away when you prune
+`playground` — those scaffolds live under a folder named `create-vite`, so
+name that segment too (as in the Vite recipe above).
 
 Always-on skips (tests, `node_modules`, build output) do not need the knob.
 Unset `HEATMAP_PRUNE` is the whole-tree city.
@@ -144,8 +152,9 @@ Unset `HEATMAP_PRUNE` is the whole-tree city.
 | 4 | `render_combined.py` | `combined.html` |
 
 `citylib.py` is the JS/TS front of step 1: which files count, how a folder
-becomes a district, how a `package.json` becomes a module, which globs the
-filter box offers (`..lib.*`, `use*`, `Planner*`, not `*Service`).
+becomes a district, how a `package.json` becomes a module, and which globs
+the filter box offers for *this* city (not a hard-coded `*Service` or a
+PFA-only `..lib.* · use*` hint).
 
 Later versions add a complexity walker (tree-sitter JS/TS), coupling edges
 (dependency-cruiser), and CRAP from Istanbul/c8/Vitest coverage. Those are
@@ -207,9 +216,22 @@ we took, and every intentional difference. The Python files themselves live
 at the repo root (they are the generators, not a third-party library). Do
 not “fix” `_district` back to the Java rule. Do not edit Victor's tree.
 
-When the city is proven on a large JS/TS repo, a TypeScript rewrite of the
-renderer is allowed. Until then, a documented one-function change beats a
-new engine.
+The same upstream also ships **`hover_cost.py`** and **`profile_city.py`** —
+Playwright probes for the hover budget. They are vendored here too
+(byte-identical; see the delta log). A large city is not “done” until plain
+hover worst stays under **50 ms**; the VS Code plate above clears that
+(9.8 ms worst).
+
+```bash
+pip install playwright && playwright install chromium
+python hover_cost.py path/to/codecity.html my-repo
+python profile_city.py path/to/codecity.html my-repo
+```
+
+v1 is proven on a large JS/TS repo (VS Code: 4507 files). A TypeScript
+rewrite of the renderer is allowed; until then, a documented one-function
+change beats a new engine.
+
 
 ## Configuration (env vars)
 

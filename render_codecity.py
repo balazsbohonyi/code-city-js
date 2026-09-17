@@ -12,7 +12,7 @@ from pathlib import Path
 
 _here = Path(__file__).resolve().parent
 sys.path.insert(0, str(_here))
-from citylib import building_name, district_of, filter_suggestions  # noqa: E402
+from citylib import building_name, district_of, filter_placeholder, filter_suggestions  # noqa: E402
 
 OUT_DIR = Path(os.environ.get("HEATMAP_OUT") or os.environ.get("HEATMAP_REPO") or _here).resolve()
 TSV = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else OUT_DIR / "codemap.tsv"
@@ -815,6 +815,7 @@ html = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__</title>
 <link rel="icon" href="__FAVICON__">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 <script type="importmap">
 {
   "imports": {
@@ -853,8 +854,61 @@ html = """<!doctype html>
     backdrop-filter: blur(10px);
     padding: 12px 14px;
   }
+  .panel[hidden], #shortcuts[hidden] { display: none !important; }
+  /* Dismiss on a chrome card (Bootstrap Icons); reopen is a filled-circle FAB. */
+  .card-dismiss {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 1;
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    font-size: 12px;
+    line-height: 1;
+    color: #98a2b3;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .card-dismiss:hover,
+  .card-dismiss:focus-visible {
+    color: #1f2933;
+    background: transparent;
+    border: none;
+    outline: none;
+    box-shadow: none;
+  }
+  .card-fab {
+    position: fixed;
+    z-index: 2;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 1px solid rgba(140, 148, 160, 0.45);
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 8px 28px rgba(15, 23, 42, 0.14);
+    backdrop-filter: blur(10px);
+    color: #1e3a8a;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  .card-fab:hover { background: #1e3a8a; color: #fff; }
+  .card-fab[hidden] { display: none !important; }
+  #settingsExpand { left: 16px; top: 16px; }
+  #shortcutsExpand { right: 16px; bottom: 16px; }
   h1 {
     margin: 0 0 3px;
+    padding-right: 22px; /* room for the panel × */
     font-size: 17px;
     font-weight: 650;
     display: flex;
@@ -1020,16 +1074,34 @@ html = """<!doctype html>
   /* Shortcuts help, pinned bottom-right, clear of the metrics tooltip (top-right). */
   #shortcuts {
     position: fixed; bottom: 16px; right: 16px; z-index: 2;
-    max-width: 340px; text-align: right;
+    max-width: 340px; text-align: left;
     font-size: 11.5px; line-height: 1.5; color: #52606d;
     background: rgba(255, 255, 255, 0.82);
     border: 1px solid rgba(140, 148, 160, 0.4);
     border-radius: 8px; padding: 9px 12px;
     box-shadow: 0 8px 28px rgba(15, 23, 42, 0.12);
     backdrop-filter: blur(10px);
+    /* Card itself does not steal orbit drags; the dismiss control needs clicks. */
     pointer-events: none;
   }
-  @media (max-width: 720px) { #shortcuts { display: none; } }
+  #shortcuts .card-dismiss { pointer-events: auto; }
+  #shortcuts .shortcuts-body { padding-right: 22px; /* room for the × on the right */ }
+  kbd {
+    display: inline-block;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.92em;
+    font-weight: 600;
+    line-height: 1.2;
+    padding: 1px 5px;
+    border: 1px solid rgba(140, 148, 160, 0.55);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.95);
+    color: #1f2933;
+  }
+  @media (max-width: 720px) {
+    #shortcuts, #shortcutsExpand { display: none !important; }
+  }
   label {
     display: grid;
     gap: 3px;
@@ -1449,17 +1521,26 @@ html = """<!doctype html>
 <body>
 <div id="scene"></div>
 <aside id="shortcuts" aria-label="controls help">
+  <button type="button" class="card-dismiss" id="shortcutsCollapse"
+          aria-label="Hide controls help"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+  <div class="shortcuts-body">
   Drag to pan<br>
-  Cmd/Ctrl-drag to rotate<br>
+  <kbd>Cmd</kbd>/<kbd>Ctrl</kbd>-drag to rotate<br>
   Scroll to zoom<br>
-  Shift-click a floor/building to zoom in<br>
-  <span id="roadsHint"><b>&#8997; over a building</b>: its coupling, as roads (&#8997;-click to pin)<br>
-    &nbsp;&nbsp;&#8984;/Ctrl-click a road: the source line that couples the two<br></span>
-  <b>&#8679; over a building</b>: what changes with it (needs the co-change colour)<br>
-  Shift-click the ground (or Esc / breadcrumb) to step out<br>
-  Cmd/Ctrl-double-click opens a file in VS Code
+  <kbd>Shift</kbd>-click a floor/building to zoom in<br>
+  <span id="roadsHint"><b><kbd>&#8997;</kbd> over a building</b>: its coupling, as roads (<kbd>&#8997;</kbd>-click to pin)<br>
+    &nbsp;&nbsp;<kbd>&#8984;</kbd>/<kbd>Ctrl</kbd>-click a road: the source line that couples the two<br></span>
+  <b><kbd>&#8679;</kbd> over a building</b>: what changes with it (needs the co-change colour)<br>
+  <kbd>Shift</kbd>-click the ground (or <kbd>Esc</kbd> / breadcrumb) to step out<br>
+  <kbd>Cmd</kbd>/<kbd>Ctrl</kbd>-double-click opens a file in VS Code
+  </div>
 </aside>
-<section class="panel">
+<button type="button" class="card-fab" id="shortcutsExpand" aria-label="Show controls help" hidden>
+  <i class="bi bi-info-lg" aria-hidden="true"></i>
+</button>
+<section class="panel" id="settingsPanel">
+  <button type="button" class="card-dismiss" id="settingsCollapse"
+          aria-label="Hide settings"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
   <h1>__LOGO_SVG__<span>__TITLE__</span><select id="viewMode" class="titleView"
       aria-label="what a building represents">
       <option value="classes" selected>Files</option>
@@ -1535,9 +1616,9 @@ html = """<!doctype html>
     </div>
 
     <span class="knob">Filter</span>
-    <div class="filterRow" title="Folder and name globs: ..components.* &middot; use* &middot; Planner*">
+    <div class="filterRow" title="Folder and name globs from this city (dropdown), or type your own">
       <input id="pkgFilter" type="text" spellcheck="false" autocomplete="off"
-             list="classFamilies" placeholder="..lib.* &middot; use*">
+             list="classFamilies" placeholder="__FILTER_PLACEHOLDER__">
       <datalist id="classFamilies">__CLASS_FAMILIES__</datalist>
       <button id="pkgFilterClear" type="button" title="clear filter" hidden>&times;</button>
       <span id="pkgFilterCount" class="filterCount"></span>
@@ -1573,6 +1654,9 @@ html = """<!doctype html>
     </div>
   </div>
 </section>
+<button type="button" class="card-fab" id="settingsExpand" aria-label="Show settings" hidden>
+  <i class="bi bi-gear-fill" aria-hidden="true"></i>
+</button>
 <nav id="breadcrumb" class="breadcrumb" hidden aria-label="package scope"></nav>
 <div class="corner">
   <button id="howtoToggle" class="howto-toggle" type="button" aria-expanded="false" aria-controls="howto">
@@ -1702,6 +1786,31 @@ let activeColorInvert = false;   // ...and whether its ramp runs backwards (cove
       fallback();
     }
   });
+})();
+
+// Collapse / expand the settings panel (top-left) and the shortcuts card (bottom-right).
+// Reopen controls are filled-circle FABs (Bootstrap Icons: gear-fill / info-lg).
+(function wireCardCollapse() {
+  const pair = (cardId, fabId, collapseId) => {
+    const card = document.getElementById(cardId);
+    const fab = document.getElementById(fabId);
+    const collapse = document.getElementById(collapseId);
+    if (!card || !fab || !collapse) return;
+    const hide = () => {
+      card.hidden = true;
+      fab.hidden = false;
+      window.dispatchEvent(new Event("codecity-chrome"));
+    };
+    const show = () => {
+      card.hidden = false;
+      fab.hidden = true;
+      window.dispatchEvent(new Event("codecity-chrome"));
+    };
+    collapse.addEventListener("click", (e) => { e.stopPropagation(); hide(); });
+    fab.addEventListener("click", (e) => { e.stopPropagation(); show(); });
+  };
+  pair("settingsPanel", "settingsExpand", "settingsCollapse");
+  pair("shortcuts", "shortcutsExpand", "shortcutsCollapse");
 })();
 </script>
 <script type="module">
@@ -3251,7 +3360,8 @@ function showLabel(L, on) {
 // canvas. Re-measured each frame — the panel grows and shrinks with its own controls.
 function panelBoxes() {
   const boxes = [];
-  for (const sel of [".panel", "#shortcuts", ".corner", ".breadcrumb"]) {
+  for (const sel of [".panel", "#shortcuts", ".corner", ".breadcrumb",
+                     "#settingsExpand", "#shortcutsExpand"]) {
     const el = document.querySelector(sel);
     if (!el || el.hidden) continue;
     // Not offsetParent: every one of these is position:fixed, for which it is always
@@ -5832,13 +5942,19 @@ breadcrumbEl.addEventListener("click", (e) => {
 renderer.domElement.addEventListener("pointerdown", dismissIntro);
 window.addEventListener("wheel", dismissIntro, { passive: true });
 
-// Park the breadcrumb just under the control panel, tracking its real height.
+// Park the breadcrumb just under the control panel, tracking its real height
+// (or the settings FAB when the panel is collapsed).
 function positionBreadcrumb() {
   const panel = document.querySelector(".panel");
-  if (panel) document.documentElement.style.setProperty("--panel-h", `${panel.offsetHeight + 14}px`);
+  const fab = document.getElementById("settingsExpand");
+  let h = 14;
+  if (panel && !panel.hidden && panel.offsetHeight) h = panel.offsetHeight + 14;
+  else if (fab && !fab.hidden && fab.offsetHeight) h = fab.offsetHeight + 14;
+  document.documentElement.style.setProperty("--panel-h", `${h}px`);
 }
 positionBreadcrumb();
 window.addEventListener("resize", positionBreadcrumb);
+window.addEventListener("codecity-chrome", positionBreadcrumb);
 
 rebuildCity();
 frameCity();   // open on the whole city, not on a hard-coded viewpoint
@@ -5932,14 +6048,20 @@ start ~/workspace/your-repo/.codecity/codecity.html
 # families (Planner*, use*). The count rides INSIDE the value, because a
 # `label` is drawn by the browser as a second line under it — and that line
 # could only repeat the glob's own words. applyFilter strips the " · N files"
-# tail back off.
+# tail back off. The empty-box placeholder is the same list's top entries so
+# a Vue city does not advertise PFA's `..lib.* · use*`.
+_FILTER_SUGGESTIONS = filter_suggestions(rows)
 FAMILY_OPTIONS = "".join(
     '<option value="{g} &#183; {n} files"></option>'.format(g=family["glob"], n=family["count"])
-    for family in filter_suggestions(rows)
+    for family in _FILTER_SUGGESTIONS
+)
+FILTER_PLACEHOLDER = (
+    filter_placeholder(rows).replace("&", "&amp;").replace('"', "&quot;")
 )
 
 html = (html
         .replace("__CLASS_FAMILIES__", FAMILY_OPTIONS)
+        .replace("__FILTER_PLACEHOLDER__", FILTER_PLACEHOLDER)
         .replace("__TITLE__", TITLE)
         .replace("__LOGO_SVG__", LOGO_SVG)
         .replace("__FAVICON__", FAVICON)

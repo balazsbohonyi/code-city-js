@@ -62,7 +62,9 @@ TEST_DIR_SEGMENTS = {
     "playwright",
 }
 
-TEST_INFIXES = {"test", "spec", "stories"}
+# Dot-token before the extension: Foo.test.tsx, Foo.test-d.ts (Vue dts-test).
+# `test-d` is not the token `test`, so it must be listed explicitly.
+TEST_INFIXES = {"test", "spec", "stories", "test-d"}
 
 
 def posix_rel(path: str, root: str) -> str:
@@ -99,10 +101,11 @@ def _extension_ok(name: str) -> bool:
 
 
 def _is_colocated_test(name: str) -> bool:
-    """Foo.test.tsx, Foo.spec.ts, Button.stories.jsx — not Foo.testimonial.ts.
+    """Foo.test.tsx, Foo.spec.ts, Button.stories.jsx, Foo.test-d.ts —
+    not Foo.testimonial.ts.
 
     The infix has to be its own dot-separated token, the way the test runners
-    themselves match.
+    themselves match. Vue's `*.test-d.ts` type tests use the token `test-d`.
     """
     parts = name.split(".")
     if len(parts) < 3:
@@ -256,3 +259,13 @@ def filter_suggestions(rows: list[dict], folder_min: int = 4, name_min: int = 3,
         seen.add(item["glob"])
         out.append(item)
     return out
+
+
+def filter_placeholder(rows: list[dict], n: int = 2) -> str:
+    """Hint text for the empty filter box — top globs from this city, not a
+    hard-coded PFA/React sample (`..lib.* · use*`).
+    """
+    globs = [s["glob"] for s in filter_suggestions(rows)[:n]]
+    if not globs:
+        return "folder or name glob"
+    return " · ".join(globs)

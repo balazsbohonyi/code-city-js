@@ -12,6 +12,7 @@ from citylib import (
     counts_toward_diagram,
     discover_module_dirs,
     district_of,
+    filter_placeholder,
     filter_suggestions,
     posix_path,
     repo_rel_parts,
@@ -65,6 +66,8 @@ def test_excludes_tests_and_pruned():
     assert not counts_toward_diagram("src/lib/planner.test.ts")
     assert not counts_toward_diagram("src/components/Button.spec.tsx")
     assert not counts_toward_diagram("src/Button.stories.tsx")
+    assert not counts_toward_diagram("runtime-dom/src/defineComponent.test-d.tsx")
+    assert not counts_toward_diagram("packages-private/dts-test/ref.test-d.ts")
     assert not counts_toward_diagram("tests/utils/test-helpers.ts")
     assert not counts_toward_diagram("test/app.router.js")
     assert not counts_toward_diagram("src/vite-env.d.ts")
@@ -78,6 +81,8 @@ def test_excludes_tests_and_pruned():
 def test_keeps_non_test_infix():
     # "test" is a token, not a substring of the filename.
     assert counts_toward_diagram("src/lib/testimonial.ts")
+    # `test-d` is the Vue token; `testDrive` is not a dot-token infix.
+    assert counts_toward_diagram("src/lib/testDrive.ts")
 
 
 def test_district_is_full_folder_not_parent_name():
@@ -109,6 +114,56 @@ def test_filter_suggestions_are_js_not_java_service():
     assert "..Planner*" in globs
     assert "*Dialog" in globs
     assert "*Service" not in globs
+
+
+def test_filter_placeholder_comes_from_this_city():
+    rows = (
+        [{"name": "BarChart", "district": "src.components.charts"}] * 4
+        + [{"name": "usePlannerStore", "district": "src.hooks"}] * 3
+        + [{"name": "badge", "district": "src.components.ui"}] * 4
+    )
+    hint = filter_placeholder(rows, n=2)
+    assert "lib.*" not in hint  # not the old hard-coded PFA sample
+    assert " · " in hint
+    assert hint.startswith("..")
+
+
+def test_filter_placeholder_fallback_when_empty():
+    assert filter_placeholder([]) == "folder or name glob"
+
+
+def test_extra_prune_create_vite_segment():
+    """HEATMAP_PRUNE=create-vite drops packages/create-vite; playground alone does not."""
+    with tempfile.TemporaryDirectory() as tmp:
+        host = Path(tmp) / "vite"
+        (host / "packages" / "vite" / "src").mkdir(parents=True)
+        (host / "packages" / "create-vite" / "template-vanilla").mkdir(parents=True)
+        (host / "playground" / "demo").mkdir(parents=True)
+        for rel in (
+            "package.json",
+            "packages/vite/package.json",
+            "packages/create-vite/package.json",
+            "playground/demo/package.json",
+        ):
+            (host / rel).write_text("{}", encoding="utf-8")
+        (host / "packages" / "vite" / "src" / "index.ts").write_text("export {}", encoding="utf-8")
+        (host / "packages" / "create-vite" / "template-vanilla" / "main.js").write_text(
+            "export {}", encoding="utf-8"
+        )
+        (host / "playground" / "demo" / "main.ts").write_text("export {}", encoding="utf-8")
+
+        discover_module_dirs.cache_clear()
+        only_playground = discover_module_dirs(str(host), frozenset({"playground"}))
+        assert "packages/vite" in only_playground
+        assert "packages/create-vite" in only_playground
+        assert "playground/demo" not in only_playground
+
+        with_templates = discover_module_dirs(
+            str(host), frozenset({"playground", "create-vite"})
+        )
+        assert "packages/vite" in with_templates
+        assert "packages/create-vite" not in with_templates
+        discover_module_dirs.cache_clear()
 
 
 if __name__ == "__main__":
