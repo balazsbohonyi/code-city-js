@@ -2,9 +2,10 @@
 """Join git history and file size into the TSV the city renderer eats.
 
 Complexity comes from `complexity-per-file.tsv` when present (v2 /
-`compute_complexity.py`); otherwise it stays 0. Fan-in/out and CRAP columns
-are still zeros or empty. Co-change comes out of the same history walk, so it
-is free and we keep it.
+`compute_complexity.py`); otherwise it stays 0. Fan-in/out come from
+`fanio-per-file.tsv` when present (v3 / `compute_fanio.mjs`); otherwise 0.
+CRAP columns stay empty until v4. Co-change comes out of the same history
+walk, so it is free and we keep it.
 
 Path separators are normalised to `/` before anything is keyed: git log on
 Windows still emits POSIX paths, os.walk does not.
@@ -61,6 +62,7 @@ BUG_SUBJECT_RE = re.compile(_bug_subj_src, re.IGNORECASE) if _bug_subj_src else 
 
 OUT_FILE = os.path.join(OUT_DIR, "codemap.tsv")
 COMPLEXITY_FILE = os.path.join(OUT_DIR, "complexity-per-file.tsv")
+FANIO_FILE = os.path.join(OUT_DIR, "fanio-per-file.tsv")
 
 bug_ids = set()
 if os.path.exists(BUG_FILE):
@@ -294,6 +296,23 @@ if os.path.exists(COMPLEXITY_FILE):
 else:
     print(f"WARN: {COMPLEXITY_FILE} not found, complexity will be 0", file=sys.stderr)
 
+fan_in_map, fan_out_map = {}, {}
+if os.path.exists(FANIO_FILE):
+    with open(FANIO_FILE, encoding="utf-8") as f:
+        next(f, None)  # header
+        for line in f:
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) >= 3:
+                key = posix_path(parts[0])
+                try:
+                    fan_in_map[key] = int(parts[1])
+                    fan_out_map[key] = int(parts[2])
+                except ValueError:
+                    continue
+    print(f"loaded fan-in/out for {len(fan_in_map)} files", file=sys.stderr)
+else:
+    print(f"WARN: {FANIO_FILE} not found, fan-in/out will be 0", file=sys.stderr)
+
 FILE_HEADER = (
     "path\tbytes\tlines\tcommits\tbug_commits\tcommits_per_kloc\tbugs_per_kloc\t"
     "bugs_per_commit\tcognitive_complexity\tcomplexity_per_kloc\tfan_in\tfan_out\t"
@@ -314,8 +333,8 @@ for ap in source_files:
     bug_commits = bug_commits_per_file.get(rel, 0)
     committers = len(committers_per_file.get(rel, ()))
     cog = complexity.get(rel, 0)
-    fi = 0
-    fo = 0
+    fi = fan_in_map.get(rel, 0)
+    fo = fan_out_map.get(rel, 0)
     kloc = lines / 1000.0 if lines else 0
     commits_per_kloc = (commits / kloc) if kloc else 0
     bugs_per_kloc = (bug_commits / kloc) if kloc else 0

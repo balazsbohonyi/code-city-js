@@ -855,7 +855,7 @@ html = """<!doctype html>
     padding: 12px 14px;
   }
   .panel[hidden], #shortcuts[hidden] { display: none !important; }
-  /* Dismiss on a chrome card (Bootstrap Icons); reopen is a filled-circle FAB. */
+  /* Dismiss on a chrome card (Bootstrap Icons); reopen is icon-only (same 40px hit). */
   .card-dismiss {
     position: absolute;
     top: 6px;
@@ -888,11 +888,10 @@ html = """<!doctype html>
     z-index: 2;
     width: 40px;
     height: 40px;
-    border-radius: 50%;
-    border: 1px solid rgba(140, 148, 160, 0.45);
-    background: rgba(255, 255, 255, 0.92);
-    box-shadow: 0 8px 28px rgba(15, 23, 42, 0.14);
-    backdrop-filter: blur(10px);
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
     color: #1e3a8a;
     font-size: 18px;
     line-height: 1;
@@ -902,7 +901,13 @@ html = """<!doctype html>
     justify-content: center;
     padding: 0;
   }
-  .card-fab:hover { background: #1e3a8a; color: #fff; }
+  .card-fab:hover,
+  .card-fab:focus-visible {
+    background: transparent;
+    color: #1e40af;
+    outline: none;
+    box-shadow: none;
+  }
   .card-fab[hidden] { display: none !important; }
   #settingsExpand { left: 16px; top: 16px; }
   #shortcutsExpand { right: 16px; bottom: 16px; }
@@ -1684,14 +1689,15 @@ html = """<!doctype html>
     </div>
     <h3>What it does</h3>
     <ol>
-      <li><code>generate.py</code> / <code>build_heatmap.py</code> &mdash; walk JS/TS
-        sources and join git history (commits, <code>fix:</code> commits) and file size
-        into <code>codemap.tsv</code>.</li>
+      <li><code>generate.py</code> &mdash; complexity (tree-sitter), coupling
+        (dependency-cruiser), then git history / size into <code>codemap.tsv</code>.</li>
       <li><code>render_codecity.py</code> &mdash; extrudes each file into a building and
         writes this self-contained <code>codecity.html</code> (Three.js, all data inline).</li>
     </ol>
     <p class="howto-note">JS/TS only (including JSX/TSX and Vue/Svelte as files).
-      Cognitive complexity, coupling roads and CRAP are later versions. Re-run anytime
+      Height is cognitive complexity; hold &#8997;/Alt for coupling roads.
+      CRAP is a later version. Install once: <code>pip install -r requirements.txt</code>
+      and <code>npm install</code> (Node on <code>PATH</code> for roads). Re-run anytime
       to refresh. <code>start</code> is Windows &mdash; use <code>open</code> on macOS
       or <code>xdg-open</code> on Linux. Ctrl/&#8984;-double-click a building to jump
       to its file in VS Code.</p>
@@ -1789,7 +1795,7 @@ let activeColorInvert = false;   // ...and whether its ramp runs backwards (cove
 })();
 
 // Collapse / expand the settings panel (top-left) and the shortcuts card (bottom-right).
-// Reopen controls are filled-circle FABs (Bootstrap Icons: gear-fill / info-lg).
+// Reopen controls are icon-only FABs (Bootstrap Icons: gear-fill / info-lg; 40px hit).
 (function wireCardCollapse() {
   const pair = (cardId, fabId, collapseId) => {
     const card = document.getElementById(cardId);
@@ -6036,6 +6042,9 @@ GUIDE_REPO = "https://github.com/victorrentea/code-city"
 BUILD_CMD = f"""# 1. The generators — a JS/TS port of Victor Rentea's Code City
 #    ({GUIDE_REPO}):
 git clone {TOOL_REPO} ~/code-city-js
+cd ~/code-city-js
+pip install -r requirements.txt   # once: complexity (tree-sitter)
+npm install                       # once: coupling (dependency-cruiser); needs Node
 
 # 2. Point them at any git repo of JS/TS sources (React, Vue, or none).
 python ~/code-city-js/generate.py ~/workspace/your-repo

@@ -66,6 +66,31 @@ TEST_DIR_SEGMENTS = {
 # `test-d` is not the token `test`, so it must be listed explicitly.
 TEST_INFIXES = {"test", "spec", "stories", "test-d"}
 
+# Coupling (v3) scores the same buildings as the city except Svelte — deferred
+# with framework frontends (ADR 0010 / v5). Keep this list next to SOURCE_SUFFIXES
+# so Node `compute_fanio.mjs` can load one JSON dump without drifting prunes.
+COUPLING_SOURCE_SUFFIXES = tuple(s for s in SOURCE_SUFFIXES if s != ".svelte")
+
+
+def include_rules_payload() -> dict:
+    """JSON-serialisable include/prune rules for the Node coupling step."""
+    return {
+        "source_suffixes": list(SOURCE_SUFFIXES),
+        "coupling_source_suffixes": list(COUPLING_SOURCE_SUFFIXES),
+        "prune_dirs": sorted(PRUNE_DIRS),
+        "test_dir_segments": sorted(TEST_DIR_SEGMENTS),
+        "test_infixes": sorted(TEST_INFIXES),
+    }
+
+
+def write_include_rules_json(path: str | os.PathLike[str]) -> None:
+    """Write `citylib_include.json` next to generate.py for compute_fanio.mjs."""
+    import json
+
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(include_rules_payload(), f, indent=2)
+        f.write("\n")
+
 
 def posix_rel(path: str, root: str) -> str:
     rel = os.path.relpath(path, root).replace("\\", "/")

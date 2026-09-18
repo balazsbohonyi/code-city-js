@@ -16,7 +16,7 @@ from compute_complexity import (  # noqa: E402
 
 
 def _score(src: str, lang=JS_LANG) -> int:
-    c, _units, _err = complexity_of_source(src.encode("utf-8"), lang)
+    c, _units, _err, _hint = complexity_of_source(src.encode("utf-8"), lang)
     return c
 
 
@@ -66,7 +66,7 @@ def test_arrow_unit_and_lambda():
 def test_nested_function_scored_separately():
     # outer empty of structures; inner if = 1; file sum = 1
     src = "function f(){ function g(){ if (a) {} } }"
-    c, units, err = complexity_of_source(src.encode(), JS_LANG)
+    c, units, err, _hint = complexity_of_source(src.encode(), JS_LANG)
     assert not err
     assert units == 2
     assert c == 1
@@ -91,7 +91,7 @@ def test_vue_script_extract_and_score():
     scripts = extract_vue_scripts(vue)
     assert len(scripts) == 1
     assert scripts[0][1] == "ts"
-    c, units, err = complexity_of_source(scripts[0][0], TS_LANG)
+    c, units, err, _hint = complexity_of_source(scripts[0][0], TS_LANG)
     assert not err
     assert units == 1
     assert c == 3
@@ -101,5 +101,16 @@ def test_vue_skips_external_src():
     vue = '<script src="./foo.ts"></script>\n<script>function f(){ if (a) {} }</script>'
     scripts = extract_vue_scripts(vue)
     assert len(scripts) == 1
-    c, _, _ = complexity_of_source(scripts[0][0], JS_LANG)
+    c, _, _, _ = complexity_of_source(scripts[0][0], JS_LANG)
     assert c == 1
+
+
+def test_jsx_bare_ampersand_warns_but_still_scores():
+    """tree-sitter TSX flags bare & in JSX text; we still score the file."""
+    from compute_complexity import TSX_LANG
+
+    src = 'export function F(){ if (a) {} return <h1>A & B</h1>; }\n'
+    c, _units, err, hint = complexity_of_source(src.encode(), TSX_LANG)
+    assert err
+    assert "A & B" in hint or "&" in hint
+    assert c >= 1

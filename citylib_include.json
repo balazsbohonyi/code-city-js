@@ -1,0 +1,59 @@
+{
+  "source_suffixes": [
+    ".tsx",
+    ".ts",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".js",
+    ".mts",
+    ".cts",
+    ".vue",
+    ".svelte"
+  ],
+  "coupling_source_suffixes": [
+    ".tsx",
+    ".ts",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".js",
+    ".mts",
+    ".cts",
+    ".vue"
+  ],
+  "prune_dirs": [
+    ".cache",
+    ".claude",
+    ".conductor",
+    ".git",
+    ".idea",
+    ".next",
+    ".nuxt",
+    ".output",
+    ".turbo",
+    ".venv",
+    "build",
+    "coverage",
+    "dist",
+    "node_modules",
+    "out",
+    "playwright-report",
+    "test-results",
+    "vendor"
+  ],
+  "test_dir_segments": [
+    "__tests__",
+    "cypress",
+    "e2e",
+    "playwright",
+    "test",
+    "tests"
+  ],
+  "test_infixes": [
+    "spec",
+    "stories",
+    "test",
+    "test-d"
+  ]
+}

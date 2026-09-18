@@ -25,7 +25,9 @@ same-named folder to one district. Do not edit the Java repo.
    colour (v2; v1 used `lines` for height until complexity was filled).
 7. Public copy (ADR 0007): clone URL `https://github.com/balazsbohonyi/code-city-js`;
    origin + howto credit Wettel and Victor's Java city as the guide; recipe is
-   `python generate.py` for JS/TS (React/Vue/none). Filter suggestions from
+   `pip install -r requirements.txt` + `npm install` once, then
+   `python generate.py` for JS/TS (React/Vue/none). Howto notes complexity
+   height + ⌥ coupling roads; CRAP still later. Filter suggestions from
    `citylib.filter_suggestions` (folders, `use*`, CamelCase prefixes) — not
    `*Service`. Empty filter placeholder is `__FILTER_PLACEHOLDER__` from
    `citylib.filter_placeholder` (top globs for this city), not a hard-coded
@@ -34,7 +36,8 @@ same-named folder to one district. Do not edit the Java repo.
    `encoding=` uses the Windows locale codec (cp1252 on Python 3.14), which
    cannot encode the ⌘/⌥/⇧ in the page.
 9. Settings panel and shortcuts card are collapsible: dismiss (top-right on
-   both) reopens via a filled-circle FAB (gear top-left, info bottom-right).
+   both) reopen via icon-only FABs (gear top-left, info bottom-right; same
+   40×40 hit target, no filled-circle chrome).
    Icons from Bootstrap Icons 1.11 CDN (`bi-x-lg`, `bi-gear-fill`,
    `bi-info-lg`). Shortcuts card is left-aligned. Key names wrapped in
    `<kbd>`.
@@ -69,5 +72,6 @@ python hover_cost.py REPO/.codecity/codecity.html label
 python profile_city.py REPO/.codecity/codecity.html label
 ```
 
-Budget inherited from the guide: worst one hover **&lt; 50 ms**. Headless
-SwiftShader FPS is a relative signal, not the pass/fail criterion.
+Budget inherited from the guide: worst **plain** hover **&lt; 50 ms**. Headless
+SwiftShader FPS is a relative signal, not the pass/fail criterion. With v3
+coupling inlined, vscode plain hover worst was about **44 ms** (still PASS).

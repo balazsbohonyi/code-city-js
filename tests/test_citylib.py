@@ -8,12 +8,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from citylib import (
+    COUPLING_SOURCE_SUFFIXES,
+    SOURCE_SUFFIXES,
     building_name,
     counts_toward_diagram,
     discover_module_dirs,
     district_of,
     filter_placeholder,
     filter_suggestions,
+    include_rules_payload,
     posix_path,
     repo_rel_parts,
     treemap_module,
@@ -22,6 +25,16 @@ from citylib import (
 
 def test_posix_slash():
     assert posix_path("src\\lib\\foo.ts") == "src/lib/foo.ts"
+
+
+def test_include_rules_payload_for_node_fanio():
+    payload = include_rules_payload()
+    assert ".vue" in payload["coupling_source_suffixes"]
+    assert ".svelte" not in payload["coupling_source_suffixes"]
+    assert ".svelte" in SOURCE_SUFFIXES
+    assert COUPLING_SOURCE_SUFFIXES == tuple(payload["coupling_source_suffixes"])
+    assert "node_modules" in payload["prune_dirs"]
+    assert "test-d" in payload["test_infixes"]
 
 
 def test_repo_rel_parts_ignore_ancestor_names():

@@ -3,8 +3,8 @@
 Turn any git checkout of **JavaScript / TypeScript** into a **3-D city you can
 walk around**: one building per file, districts per folder, its height and
 colour driven by whatever you want to see — size, cognitive complexity, churn,
-bug-fixes, and (later) coupling. Plus the 2-D **codemap** it ships with: a
-treemap next to a log–log scatter.
+bug-fixes, and **internal coupling roads**. Plus the 2-D **codemap** it ships
+with: a treemap next to a log–log scatter.
 
 This is a port of [Victor Rentea's Code City](https://github.com/victorrentea/code-city)
 from Java to the JS/TS world — React, Vue, or no framework. The original is
@@ -16,27 +16,59 @@ disk.
 
 <img src="docs/vscode-city.jpg" alt="Visual Studio Code as a Code City" width="100%">
 
-*Visual Studio Code: 4507 source files, 580 folders — one run, one page (~7 MB).
+*Visual Studio Code: 9302 source files, 1722 folders — one run, one page.
 Height is cognitive complexity (Sonar-style via tree-sitter), colour is
-commits per KLOC on a log ramp. Coupling roads and CRAP are later versions,
-not faked from LOC. Plain hover worst 7.5 ms on the v2 plate (budget under
-50 ms).*
+commits per KLOC on a log ramp. Hold ⌥ for internal coupling roads. CRAP is
+a later version, not faked from LOC. Plain hover worst ~9.5 ms on this plate
+(budget under 50 ms).*
 
-## Quick start
+## Install (once per machine / env)
+
+You need **Python 3**, **Node.js on `PATH`**, **npm**, and **git**.
 
 ```bash
 git clone https://github.com/balazsbohonyi/code-city-js
-pip install -r code-city-js/requirements.txt   # once: tree-sitter JS/TS grammars
-python code-city-js/generate.py /path/to/your-repo
+cd code-city-js
+pip install -r requirements.txt   # tree-sitter JS/TS grammars (complexity)
+npm install                       # dependency-cruiser + TypeScript + Vue SFC (coupling)
+```
+
+On Windows PowerShell, if `npm` is blocked by the execution policy, use
+`npm.cmd install` instead.
+
+Do **not** reinstall before every city. Re-run `pip install` / `npm install`
+only when `requirements.txt` or `package.json` change, or in a fresh venv.
+
+**Without Node:** `generate.py` still builds a city (size, git, complexity).
+Fan-in/out stay `0` and ⌥ roads stay off.
+
+## Quick start (each target repo)
+
+The target must be a **git checkout** of JS/TS sources (full history preferred).
+
+```bash
+# from anywhere, after Install above
+python /path/to/code-city-js/generate.py /path/to/your-repo
+
 # Windows:  start  your-repo\.codecity\codecity.html
 # macOS:    open   your-repo/.codecity/codecity.html
 # Linux:    xdg-open your-repo/.codecity/codecity.html
 ```
 
-Install the small Python deps **once** per environment (`requirements.txt`
-only changes when the complexity grammars do). Regenerating a city is just
-`generate.py` again. The repo must be a git checkout (history is half the
-metrics). Output lands in `REPO/.codecity/`:
+```powershell
+# Windows example
+python D:\develop\playground\code-city-js\generate.py D:\path\to\your-repo
+start D:\path\to\your-repo\.codecity\codecity.html
+```
+
+Optional second argument = output directory (default `REPO/.codecity`):
+
+```bash
+python /path/to/code-city-js/generate.py /path/to/your-repo /tmp/my-city
+```
+
+Thin wrappers: `generate.sh` / `generate.ps1` (same args). Env-var knobs:
+[Configuration](#configuration-env-vars).
 
 | File | What it is |
 | --- | --- |
@@ -45,11 +77,8 @@ metrics). Output lands in `REPO/.codecity/`:
 | `combined.html` | both, side by side, hover-linked |
 | `*.tsv` | the measurements, if you want to plot your own |
 
-`python generate.py REPO OUT` also takes an explicit output directory, and
-every knob has an env-var twin (see [Configuration](#configuration-env-vars))
-for CI use.
-
-Do not commit generated cities.
+Do not commit generated cities. Nothing special is required **inside** the
+target repo (no config file, no dependency-cruiser install there).
 
 ## What a building is
 
@@ -90,11 +119,18 @@ is VS Code (`vscode://file/…`). Unset `HEATMAP_OPEN_IN` to disable it.
 | `committers` | distinct author emails that touched the file | computed |
 | `cochange_out` | of the commits that touched this file, the share that also reached outside its folder, weighted by how far out | computed |
 | `cognitive_complexity` | Sonar-style cognitive complexity, summed over functions in the file (tree-sitter). JS/TS/JSX/TSX, plus Vue `<script>` / `<script setup>` — not templates. `??` counts in boolean groups (intentional); `?.` does not. | computed |
-| `fan_in` / `fan_out` | how many repo files import this file / it imports (internal only) | reserved (0) |
+| `fan_in` / `fan_out` | how many **repo** files import this file / it imports | computed |
 | `coverage` / `crap_max` / `crap_load` | line coverage and CRAP from a test run | reserved (absent, not zero) |
 
-Reserved columns are in the TSV so the renderer’s schema matches the Java
-guide. They are **not** faked from LOC. Default HEIGHT is cognitive
+**Coupling roads.** Hold **⌥ / Alt** over a building to draw roads to the
+files it depends on (and that depend on it). Edges come from
+[dependency-cruiser](https://github.com/sverweij/dependency-cruiser):
+**internal only** (no `node_modules`), **`import type` dropped**, string
+`require()` counted, static `import('…')` counted, and **barrels resolved
+through** so roads aim at real peers instead of stopping on every `index.ts`.
+Road thickness is how often the source names the target; click lands on the
+first non-import use when we can find one. CRAP columns stay absent until a
+later version — still **not** faked from LOC. Default HEIGHT is cognitive
 complexity; COLOR = commits per KLOC is still the churn reading.
 
 **Presets.** **Overview** is absolute complexity (tall = hard to follow).
@@ -152,18 +188,20 @@ Unset `HEATMAP_PRUNE` is the whole-tree city.
 
 ## Pipeline
 
+After [Install](#install-once-per-machine--env):
+
 ```bash
-pip install -r requirements.txt   # tree-sitter JS/TS grammars
 python generate.py /path/to/your-repo
 ```
 
 | Step | Script | Produces |
 | --- | --- | --- |
 | 1 | `compute_complexity.py` | `complexity-per-file.tsv` (Sonar-style scores) |
-| 2 | `build_heatmap.py` | `codemap.tsv` (git history + size + complexity join) + packages/modules + `cochange-edges.tsv` |
-| 3 | `render_heatmap.py` | `codemap.html` |
-| 4 | `render_codecity.py` | `codecity.html` |
-| 5 | `render_combined.py` | `combined.html` |
+| 2 | `compute_fanio.mjs` | `fanio-per-file.tsv` + `coupling-edges.tsv` (needs Node) |
+| 3 | `build_heatmap.py` | `codemap.tsv` (git + size + complexity + fanio) + packages/modules + `cochange-edges.tsv` |
+| 4 | `render_heatmap.py` | `codemap.html` |
+| 5 | `render_codecity.py` | `codecity.html` |
+| 6 | `render_combined.py` | `combined.html` |
 
 `citylib.py` is the JS/TS front of inclusion: which files count, how a folder
 becomes a district, how a `package.json` becomes a module, which bucket a
@@ -171,8 +209,7 @@ file uses in the 2-D treemap (repo-root files under `root`, so Plotly never
 sees duplicate ids), and which globs the filter box offers for *this* city
 (not a hard-coded `*Service` or a PFA-only `..lib.* · use*` hint).
 
-Later versions add coupling edges (dependency-cruiser) and CRAP from
-Istanbul/c8/Vitest coverage.
+A later version adds CRAP from Istanbul/c8/Vitest coverage.
 
 ## CodeCity
 
@@ -213,9 +250,11 @@ work, else the last commit that touched analysed files. Unchanged buildings
 drain to grey; files that **grew** carry dashed marks at the old height and
 the old footprint.
 
-**Coupling streets (⌥) and co-change (Shift)** are in the page. Co-change
-has data. Coupling roads have nothing to draw until fan-in/out is computed —
-the overlay is absent rather than a plate of invented wires.
+**Coupling streets (⌥) and co-change (Shift)** are in the page when their
+data exists. Co-change comes from git. Coupling roads come from
+`compute_fanio.mjs` (after `npm install`). If Node was missing or the cruise
+failed, fan-in/out stay `0` and the roads hint is absent — never invented
+wires.
 
 ## The renderer
 
@@ -234,8 +273,9 @@ The same upstream also ships **`hover_cost.py`** and **`profile_city.py`** —
 Playwright probes for the hover budget. They are vendored here too
 (byte-identical; see the delta log). A large city is not “done” until plain
 hover worst stays under **50 ms**; the current VS Code plate clears that
-(**7.5 ms** worst on the complexity city; the earlier size/churn close was
-9.8 ms).
+(about **9.5 ms** worst on the trimmed-edges coupling plate; pre-trim coupling
+was **44 ms**; complexity-only close was **7.5 ms**; size/churn close was
+**9.8 ms**).
 
 ```bash
 pip install playwright && playwright install chromium
@@ -257,6 +297,7 @@ beats a new engine.
 | `HEATMAP_REPO` | repo root to analyse (default: git toplevel) |
 | `HEATMAP_OUT` | directory for `.tsv` / `.html` (default: `REPO/.codecity`) |
 | `HEATMAP_PRUNE` | extra folder **names** to skip, comma-separated (`playground,docs`). Path segments inside the repo only — see [Skipping demos](#skipping-demos-heatmap_prune) |
+| `HEATMAP_ROAD_EDGE_CAP` | max coupling edges kept **per direction per file** in `coupling-edges.tsv` for ⌥ drawing (default `80`, matches the renderer). `fan_in` / `fan_out` counts stay full |
 | `HEATMAP_BUG_COMMIT_REGEX` | regex on the commit subject that flags a bug-fix (`""` disables it) |
 | `HEATMAP_TITLE` / `HEATMAP_SUBTITLE` / `CODECITY_TITLE` | page heading text |
 | `HEATMAP_OPEN_IN` | `vscode` to enable ⌘/Ctrl-click-to-open (empty = off) |
@@ -271,6 +312,6 @@ written to draw the Spring Framework as a city and recovered, parameterized
 and documented there.
 
 This repo redoes the **language front-end** (what a building is, which files
-count, how git history joins them, cognitive complexity via tree-sitter) and
-keeps the **city** until there is a reason not to. Coupling and CRAP are
-later versions, not silent zeros.
+count, how git history joins them, cognitive complexity via tree-sitter,
+coupling via dependency-cruiser) and keeps the **city** until there is a
+reason not to. CRAP is a later version, not silent zeros.

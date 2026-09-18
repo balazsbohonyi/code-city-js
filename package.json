@@ -1,0 +1,11 @@
+{
+  "name": "code-city-js",
+  "private": true,
+  "type": "module",
+  "description": "JS/TS Code City generators",
+  "dependencies": {
+    "@vue/compiler-sfc": "^3.5.13",
+    "dependency-cruiser": "^16.10.4",
+    "typescript": "5.8.3"
+  }
+}

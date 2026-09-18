@@ -439,11 +439,34 @@ def collect_score_units(root: Node) -> list[Node]:
     return units
 
 
-def complexity_of_source(src: bytes, lang: Language) -> tuple[int, int, bool]:
-    """Return (file_complexity, unit_count, had_parse_error)."""
+def first_parse_error_hint(root: Node, src: bytes) -> str:
+    """Short hint for stderr when tree-sitter marks ERROR/missing nodes.
+
+    Common JS/TSX case: bare ``&`` in JSX text (``Title & Subtitle``) — the
+    grammar expects ``&amp;`` or a ``{...}`` expression. We still score the
+    file; this is a warning, not a drop.
+    """
+    stack = [root]
+    while stack:
+        n = stack.pop()
+        if n.type == "ERROR" or n.is_missing:
+            line = n.start_point[0] + 1
+            snippet = src[n.start_byte : n.end_byte][:40]
+            try:
+                text = snippet.decode("utf-8", errors="replace").replace("\n", " ")
+            except Exception:
+                text = repr(snippet)
+            return f"line {line}: {text!r}"
+        stack.extend(reversed(n.children))
+    return "tree has_error"
+
+
+def complexity_of_source(src: bytes, lang: Language) -> tuple[int, int, bool, str]:
+    """Return (file_complexity, unit_count, had_parse_error, error_hint)."""
     tree = _parser_for(lang).parse(src)
     root = tree.root_node
     had_error = root.has_error
+    hint = first_parse_error_hint(root, src) if had_error else ""
     units = collect_score_units(root)
     total = 0
     for u in units:
@@ -501,7 +524,7 @@ def complexity_of_source(src: bytes, lang: Language) -> tuple[int, int, bool]:
             if c.is_named:
                 total += top_level_contrib(c)
 
-    return total, len(units), had_error
+    return total, len(units), had_error, hint
 
 
 def lang_for_path(path: Path, vue_lang: str | None = None) -> Language:
@@ -521,38 +544,41 @@ def lang_for_path(path: Path, vue_lang: str | None = None) -> Language:
     return JS_LANG
 
 
-def process_file(abs_path: Path) -> tuple[str, int, int, bool]:
-    """Return (rel, complexity, unit_count, error)."""
+def process_file(abs_path: Path) -> tuple[str, int, int, bool, str]:
+    """Return (rel, complexity, unit_count, error, error_hint)."""
     rel = posix_rel(str(abs_path), str(REPO))
     suf = abs_path.suffix.lower()
     try:
         raw = abs_path.read_bytes()
     except OSError as e:
         print(f"warn: cannot read {rel}: {e}", file=sys.stderr)
-        return rel, 0, 0, True
+        return rel, 0, 0, True, str(e)
 
     if suf in VUE_EXTS:
         text = raw.decode("utf-8", errors="replace")
         scripts = extract_vue_scripts(text)
         if not scripts:
-            return rel, 0, 0, False
+            return rel, 0, 0, False, ""
         total = 0
         units = 0
         err = False
+        hint = ""
         for body, vlang in scripts:
             lang = lang_for_path(abs_path, vlang)
-            c, u, e = complexity_of_source(body, lang)
+            c, u, e, h = complexity_of_source(body, lang)
             total += c
             units += u
+            if e and not hint:
+                hint = h
             err = err or e
-        return rel, total, units, err
+        return rel, total, units, err, hint
 
     if suf not in SCORE_EXTS:
-        return rel, 0, 0, False
+        return rel, 0, 0, False, ""
 
     lang = lang_for_path(abs_path)
-    c, u, e = complexity_of_source(raw, lang)
-    return rel, c, u, e
+    c, u, e, h = complexity_of_source(raw, lang)
+    return rel, c, u, e, h
 
 
 def iter_source_files() -> list[Path]:
@@ -581,10 +607,11 @@ def main() -> int:
     rows: list[tuple[str, int, int, int]] = []
     errors = 0
     for i, p in enumerate(files):
-        rel, cog, units, err = process_file(p)
+        rel, cog, units, err, hint = process_file(p)
         if err:
             errors += 1
-            print(f"warn: parse errors in {rel}", file=sys.stderr)
+            extra = f" ({hint})" if hint else ""
+            print(f"warn: parse errors in {rel}{extra}", file=sys.stderr)
         # class_count column unused for JS; keep Java TSV shape (file, complexity, …)
         rows.append((rel, cog, 0, units))
         if (i + 1) % 500 == 0:
