@@ -2395,20 +2395,47 @@ function setRotationPivotToViewportCenter() {
 let pointerIsDown = false;    // a mouse button is currently pressed on the canvas
 let isDragging = false;       // …and the pointer has travelled far enough to be a drag
 let hoverCursor = "default";  // cursor implied by what is under the pointer (set in onPointerMove)
+// Cmd/Ctrl is also OrbitControls' invert-to-rotate when LEFT=PAN. A press that starts
+// on a jumpable road must not open that orbit, or Ctrl-click-to-source (esp. on Windows,
+// where there is no separate ⌘) loses to a viewport rotate. Locked in capture-phase
+// pointerdown before OrbitControls sees the event; cleared on pointerup / blur.
+let roadJumpLocksRotate = false;
+// Remember the jump from pointerdown: click fires after pointerup, and a 1–2px wiggle
+// can clear unpinned streets (hover left the building) before pickRoadJump runs again.
+let armedRoadJump = null;
+
+function releaseRoadJumpRotateLock() {
+  if (!roadJumpLocksRotate) return;
+  controls.enableRotate = true;
+  roadJumpLocksRotate = false;
+}
 
 function onPointerDown(event) {
   pointerDownAt = { x: event.clientX, y: event.clientY };
   pointerIsDown = true;
   isDragging = false;
-  if (event.metaKey || event.ctrlKey) {
+  armedRoadJump = null;
+  if ((event.metaKey || event.ctrlKey) && streetGroup) {
+    const jump = pickRoadJump(event);
+    if (jump) {
+      controls.enableRotate = false;
+      roadJumpLocksRotate = true;
+      armedRoadJump = jump;
+    } else {
+      setRotationPivotToViewportCenter();
+    }
+  } else if (event.metaKey || event.ctrlKey) {
     setRotationPivotToViewportCenter();
   }
   applyCursor(event);
 }
 
 function onPointerUp(event) {
+  const wasDragging = isDragging;
   pointerIsDown = false;
   isDragging = false;
+  releaseRoadJumpRotateLock();
+  if (wasDragging) armedRoadJump = null;   // it was an orbit/pan attempt, not a click
   applyCursor(event);
 }
 
@@ -2427,12 +2454,17 @@ const ROTATE_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(ROTATE_CURSO
 // hover cursor (hand over a building, arrow over empty ground).
 function applyCursor(event) {
   let cursor;
-  // While ⌘ is held over a road that names one class, the pointer says so: a trunk (which
-  // names none) and a purple road (which names two) keep the orbit cursor, so "this one
-  // can be followed" is answered before the click rather than by its silence afterwards.
-  if ((event.metaKey || event.ctrlKey) && !isDragging && streetGroup && pickRoadJump(event)) {
+  // keydown/keyup carry modifiers but no clientX; reuse the last pointer position so
+  // pressing Ctrl/⌘ while already over a jumpable road shows the hand, not the orbit glyph.
+  const probe = (event && event.clientX !== undefined) ? event : lastPointerEvent;
+  const mods = event || probe;
+  const wantsMod = !!(mods && (mods.metaKey || mods.ctrlKey));
+  // While ⌘/Ctrl is held over a road that names one class, the pointer says so: a trunk
+  // (which names none) and a purple road (which names two) keep the orbit cursor, so
+  // "this one can be followed" is answered before the click rather than by its silence.
+  if (wantsMod && !isDragging && streetGroup && probe && pickRoadJump(probe)) {
     cursor = "pointer";
-  } else if (event.metaKey || event.ctrlKey) cursor = ROTATE_CURSOR;
+  } else if (wantsMod) cursor = ROTATE_CURSOR;
   else if (isDragging) cursor = "move";
   else cursor = hoverCursor;
   renderer.domElement.style.cursor = cursor;
@@ -2510,8 +2542,20 @@ function pickBuilding(event) {
 }
 
 function openInEditor(rel, line) {
-  const abs = REPO_ABS + "/" + rel;
-  window.location.href = "vscode://file" + encodeURI(abs) + (line ? ":" + line : "");
+  // VS Code expects vscode://file/<abs> with forward slashes. On Windows REPO_ABS uses
+  // backslashes; the old "vscode://file" + abs glued into "vscode://fileD:..." which the
+  // protocol handler ignores. (Backslash regex is quadrupled: Python string -> JS source.)
+  const abs = (REPO_ABS + "/" + rel).replace(/\\\\/g, "/");
+  const path = abs.startsWith("/") ? abs : "/" + abs;
+  const href = "vscode://file" + encodeURI(path) + (line ? ":" + line : "");
+  // Probe hook for Playwright helpers (and anyone else listening): fires before the
+  // custom-protocol navigation, which headless Chromium often cannot complete.
+  window.dispatchEvent(new CustomEvent("codecity-open-editor", {
+    detail: { path: rel, line: line || null, href },
+  }));
+  // Helpers set this so a successful jump can be asserted without tearing down the page.
+  if (window.__codecityPreventEditorNav) return;
+  window.location.href = href;
 }
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0x8592a3, 2.1));
@@ -4411,11 +4455,15 @@ function showStreetsFor(entry) {
   const group = new THREE.Group();
   for (const kind of ROAD_KINDS) {
     const roadway = sinkMesh(sinks[kind].road, roadMaterial[kind], 0);
+    const lane = sinkMesh(sinks[kind].lane, flowMaterial[kind], 1);
     // Quad i of this geometry is triangles 2i and 2i+1, so a raycast's faceIndex >> 1 is
-    // the index into the owner table the sink filled as it was built.
-    if (roadway) roadway.userData.roadOwners = sinks[kind].road.owner;
-    for (const mesh of [roadway,
-                        sinkMesh(sinks[kind].lane, flowMaterial[kind], 1),
+    // the index into the owner table the sink filled as it was built. Lane has the same
+    // quad order as the roadway (addRoad pushes both in lockstep), so it shares the
+    // owner table — a thicker/higher pick target for ⌘/Ctrl-click.
+    const owners = sinks[kind].road.owner;
+    if (roadway) roadway.userData.roadOwners = owners;
+    if (lane) lane.userData.roadOwners = owners;
+    for (const mesh of [roadway, lane,
                         sinkMesh(sinks[kind].gate, gateMaterial[kind], 2),
                         sinkMesh(sinks[kind].gateSide, gateSideMaterial[kind], 2)]) {
       if (mesh) group.add(mesh);
@@ -5135,11 +5183,10 @@ function applyScopePick() {
   scopeTo(value);
 }
 
-// ⌘/Ctrl-click a road and land on the line that makes the coupling. The roadway meshes
+// ⌘/Ctrl-click a road and land on the line that makes the coupling. Roadway + lane meshes
 // are merged per direction, so the hit comes back as a triangle index rather than as an
-// object; `roadOwners` turns it back into the one edge that quad was laid for. Only the
-// roadway is tested — the lane and the gates sit on top of it and would only ever mask
-// the wider thing underneath.
+// object; `roadOwners` turns it back into the one edge that quad was laid for. Gates are
+// not pickable (no owner table) — they would only mask the stretch underneath.
 function pickRoadJump(event) {
   // Also called from applyCursor, which is wired to keydown/keyup as well: a keyboard
   // event has no clientX, and casting a ray through a NaN pointer is nonsense the
@@ -5154,28 +5201,35 @@ function pickRoadJump(event) {
   return hit.object.userData.roadOwners[hit.faceIndex >> 1] || null;
 }
 
+function isSceneClickTarget(target) {
+  if (target === renderer.domElement) return true;
+  // CSS2D coupling labels sit above the canvas. A ⌘/Ctrl-click aimed at the road under
+  // a name must still reach pickRoadJump rather than being ignored as "UI".
+  return !!(target && target.closest && target.closest(".coupling-label"));
+}
+
 function onSceneClick(event) {
-  if (introEl || event.target !== renderer.domElement) return;   // ignore UI / overlay clicks
+  if (introEl) return;
   if (performance.now() - lastScopeAt < 350) return;             // swallow the 2nd click of a double-click
   if (pointerDownAt) {
     const moved = Math.hypot(event.clientX - pointerDownAt.x, event.clientY - pointerDownAt.y);
     if (moved > 6) return;                                        // it was a drag (pan/orbit), not a click
   }
   // ⌘/Ctrl-click on a road: into the code, at the line that couples the two classes.
-  // Tried before anything else that ⌘ means, and only while a bundle is actually up —
-  // with no roads on the plate this is not a gesture at all and everything below still
-  // sees the click.
+  // Handled BEFORE the canvas-target check: CSS2D overlays / panel chrome can sit above
+  // the WebGL canvas, but pointerdown already raycast-armed the jump from clientX/Y.
   // ⌥ may still be down — holding it to see the roads and ⌘-clicking one of them is the
-  // gesture, not a two-step ritual of pin-then-click. ⌘ wins over the ⌥-click pin below,
-  // which is why this is tested first.
+  // gesture. ⌘ wins over the ⌥-click pin below, which is why this is tested first.
   if ((event.metaKey || event.ctrlKey) && !event[NAV_KEY]) {
-    const jump = pickRoadJump(event);
+    const jump = pickRoadJump(event) || armedRoadJump;
+    armedRoadJump = null;
     if (jump) {
       event.preventDefault();
       openInEditor(jump.path, jump.line);
       return;
     }
   }
+  if (!isSceneClickTarget(event.target)) return;   // ignore settings / howto / etc.
   // ⌥-click toggles the pin on the building's road bundle.
   if (event.altKey && !event.metaKey && !event.ctrlKey && !event[NAV_KEY]) {
     const hit = pickBuilding(event);
@@ -5935,7 +5989,13 @@ window.addEventListener("keyup", applyCursor);
 // Alt-Tabbing away releases the key somewhere we never hear about; without this the
 // wires would still be hanging in the city when you come back.
 window.addEventListener("blur", clearStreets);
-window.addEventListener("blur", () => { pointerIsDown = false; isDragging = false; renderer.domElement.style.cursor = "default"; });
+window.addEventListener("blur", () => {
+  pointerIsDown = false;
+  isDragging = false;
+  armedRoadJump = null;
+  releaseRoadJumpRotateLock();
+  renderer.domElement.style.cursor = "default";
+});
 window.addEventListener("dblclick", onDoubleClick);
 window.addEventListener("click", onSceneClick);
 window.addEventListener("keydown", (e) => {
