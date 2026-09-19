@@ -45,22 +45,24 @@ same-named folder to one district. Do not edit the Java repo.
    Icons from Bootstrap Icons 1.11 CDN (`bi-x-lg`, `bi-gear-fill`,
    `bi-info-lg`). Shortcuts card is left-aligned. Key names wrapped in
    `<kbd>`.
-10. Cmd/Ctrl-click on a jumpable coupling road: capture-phase pointerdown
-    sets `controls.enableRotate = false` for that gesture so OrbitControls
-    (LEFT=PAN → Ctrl/Cmd inverts to rotate) cannot steal the click, and
-    arms the jump target for the following `click` (which runs after
-    pointerup — a 1–2px wiggle can clear unpinned streets before a second
-    pickRoadJump). Without this, Windows Ctrl-click-to-source rotated the
-    viewport instead of opening the editor. `applyCursor` probes
-    `lastPointerEvent` on keydown/keyup (no `clientX`) so Ctrl/⌘ over a
-    road shows the hand. `openInEditor` normalises Windows paths to
-    `vscode://file/D:/...` (forward slashes + slash after `file`); the
-    upstream `vscode://file` + `D:\...` form is ignored by the handler.
+10. Cmd/Ctrl-click on a jumpable coupling road **or Cmd/Ctrl-double-click a
+    building**: capture-phase pointerdown sets `controls.enableRotate = false`
+    for that gesture so OrbitControls (LEFT=PAN → Ctrl/Cmd inverts to rotate)
+    cannot steal the click, and arms the jump target (`armedRoadJump` /
+    `armedBuildingPath`) for the following `click` / `dblclick` (which run
+    after pointerup — a 1–2px wiggle can miss the mesh). Empty ground still
+    orbits. Without this, Windows Ctrl-to-source rotated the viewport instead
+    of opening the editor. `applyCursor` probes `lastPointerEvent` on
+    keydown/keyup (no `clientX`) so Ctrl/⌘ over a road **or a building**
+    shows the hand, not the orbit glyph. `openInEditor` normalises Windows
+    paths to `vscode://file/D:/...` (forward slashes + slash after `file`);
+    the upstream `vscode://file` + `D:\...` form is ignored by the handler.
     Also dispatches `codecity-open-editor` (and honours
     `__codecityPreventEditorNav`) for Playwright. Lane meshes share the
     roadway `roadOwners` table so the pick target is easier to hit.
     Coupling-label clicks also count as scene clicks when the name sits
-    over the roadway.
+    over the roadway. (Shipped in `0dac0c5` for roads; v4 copy pass
+    `f59503b` accidentally dropped it; restored and extended to buildings.)
 
 ## `render_heatmap.py`
 
