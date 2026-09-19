@@ -22,3 +22,6 @@ Thumbs.db
 node_modules/
 dist/
 coverage/
+# Keep checked-in Istanbul goldens for v4 CRAP unit tests.
+!tests/fixtures/crap/coverage/
+!tests/fixtures/crap/coverage/**

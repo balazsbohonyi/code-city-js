@@ -29,7 +29,8 @@ def _number(row, key, cast=float):
 def _optional(row, key, cast=float):
     """A metric that can be genuinely ABSENT rather than zero.
 
-    CRAP and coverage exist only where a JaCoCo report covered the file, and an
+    CRAP and coverage exist only where an Istanbul (JS) / JaCoCo (Java) report
+    covered the file, and an
     unmeasured class is not a class measured at 0%: folding the two together would paint
     a module nobody built as either flawless or hopeless, depending on the metric. An
     empty cell becomes None here, null in the page, and the "not measured" grey on the
@@ -1600,7 +1601,7 @@ html = """<!doctype html>
       <option value="cochange_out">cross-package co-change</option>
       <option value="crap_max">CRAP &mdash; worst method</option>
       <option value="crap_load">CRAP load</option>
-      <option value="coverage">line coverage % (all tests)</option>
+      <option value="coverage">statement coverage % (all tests)</option>
       <option value="coverage_acceptance">acceptance coverage % (UI)</option>
     </select>
     <label class="checkbox" title="Divide by thousands of lines, turning the count into a density.">
@@ -1690,13 +1691,17 @@ html = """<!doctype html>
     <h3>What it does</h3>
     <ol>
       <li><code>generate.py</code> &mdash; complexity (tree-sitter), coupling
-        (dependency-cruiser), then git history / size into <code>codemap.tsv</code>.</li>
+        (dependency-cruiser), optional CRAP from Istanbul
+        <code>coverage-final.json</code>, then git history / size into
+        <code>codemap.tsv</code>.</li>
       <li><code>render_codecity.py</code> &mdash; extrudes each file into a building and
         writes this self-contained <code>codecity.html</code> (Three.js, all data inline).</li>
     </ol>
     <p class="howto-note">JS/TS only (including JSX/TSX and Vue/Svelte as files).
       Height is cognitive complexity; hold &#8997;/Alt for coupling roads.
-      CRAP is a later version. Install once: <code>pip install -r requirements.txt</code>
+      Point <code>CODECITY_COVERAGE</code> at an Istanbul
+      <code>coverage-final.json</code> to colour by coverage / CRAP.
+      Install once: <code>pip install -r requirements.txt</code>
       and <code>npm install</code> (Node on <code>PATH</code> for roads). Re-run anytime
       to refresh. <code>start</code> is Windows &mdash; use <code>open</code> on macOS
       or <code>xdg-open</code> on Linux. Ctrl/&#8984;-double-click a building to jump
@@ -1926,10 +1931,10 @@ if (!HAS_COCHANGE) {
   const opt = document.querySelector('#colorMetric option[value="cochange_out"]');
   if (opt) opt.remove();
 }
-// CRAP and coverage need a JaCoCo report, which needs the repo's tests to have been RUN
-// — everything else in this city is read off the sources and the git log alone. Most
-// runs will not have one, and an option that colours every building "not measured" is
-// worse than no option, so the three of them go the same way the co-change one does.
+// CRAP and coverage need an Istanbul coverage-final.json (JS) / JaCoCo XML (Java
+// guide) — everything else in this city is read off the sources and the git log
+// alone. Most runs will not have one, and an option that colours every building
+// "not measured" is worse than no option, so they go the same way co-change does.
 const CRAP_METRICS = ["crap_max", "crap_load", "coverage", "coverage_acceptance"];
 const HAS_CRAP = FILES.some(f => f.coverage !== undefined);
 if (!HAS_CRAP) {
@@ -2395,47 +2400,20 @@ function setRotationPivotToViewportCenter() {
 let pointerIsDown = false;    // a mouse button is currently pressed on the canvas
 let isDragging = false;       // …and the pointer has travelled far enough to be a drag
 let hoverCursor = "default";  // cursor implied by what is under the pointer (set in onPointerMove)
-// Cmd/Ctrl is also OrbitControls' invert-to-rotate when LEFT=PAN. A press that starts
-// on a jumpable road must not open that orbit, or Ctrl-click-to-source (esp. on Windows,
-// where there is no separate ⌘) loses to a viewport rotate. Locked in capture-phase
-// pointerdown before OrbitControls sees the event; cleared on pointerup / blur.
-let roadJumpLocksRotate = false;
-// Remember the jump from pointerdown: click fires after pointerup, and a 1–2px wiggle
-// can clear unpinned streets (hover left the building) before pickRoadJump runs again.
-let armedRoadJump = null;
-
-function releaseRoadJumpRotateLock() {
-  if (!roadJumpLocksRotate) return;
-  controls.enableRotate = true;
-  roadJumpLocksRotate = false;
-}
 
 function onPointerDown(event) {
   pointerDownAt = { x: event.clientX, y: event.clientY };
   pointerIsDown = true;
   isDragging = false;
-  armedRoadJump = null;
-  if ((event.metaKey || event.ctrlKey) && streetGroup) {
-    const jump = pickRoadJump(event);
-    if (jump) {
-      controls.enableRotate = false;
-      roadJumpLocksRotate = true;
-      armedRoadJump = jump;
-    } else {
-      setRotationPivotToViewportCenter();
-    }
-  } else if (event.metaKey || event.ctrlKey) {
+  if (event.metaKey || event.ctrlKey) {
     setRotationPivotToViewportCenter();
   }
   applyCursor(event);
 }
 
 function onPointerUp(event) {
-  const wasDragging = isDragging;
   pointerIsDown = false;
   isDragging = false;
-  releaseRoadJumpRotateLock();
-  if (wasDragging) armedRoadJump = null;   // it was an orbit/pan attempt, not a click
   applyCursor(event);
 }
 
@@ -2454,17 +2432,12 @@ const ROTATE_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(ROTATE_CURSO
 // hover cursor (hand over a building, arrow over empty ground).
 function applyCursor(event) {
   let cursor;
-  // keydown/keyup carry modifiers but no clientX; reuse the last pointer position so
-  // pressing Ctrl/⌘ while already over a jumpable road shows the hand, not the orbit glyph.
-  const probe = (event && event.clientX !== undefined) ? event : lastPointerEvent;
-  const mods = event || probe;
-  const wantsMod = !!(mods && (mods.metaKey || mods.ctrlKey));
-  // While ⌘/Ctrl is held over a road that names one class, the pointer says so: a trunk
-  // (which names none) and a purple road (which names two) keep the orbit cursor, so
-  // "this one can be followed" is answered before the click rather than by its silence.
-  if (wantsMod && !isDragging && streetGroup && probe && pickRoadJump(probe)) {
+  // While ⌘ is held over a road that names one class, the pointer says so: a trunk (which
+  // names none) and a purple road (which names two) keep the orbit cursor, so "this one
+  // can be followed" is answered before the click rather than by its silence afterwards.
+  if ((event.metaKey || event.ctrlKey) && !isDragging && streetGroup && pickRoadJump(event)) {
     cursor = "pointer";
-  } else if (wantsMod) cursor = ROTATE_CURSOR;
+  } else if (event.metaKey || event.ctrlKey) cursor = ROTATE_CURSOR;
   else if (isDragging) cursor = "move";
   else cursor = hoverCursor;
   renderer.domElement.style.cursor = cursor;
@@ -2542,20 +2515,8 @@ function pickBuilding(event) {
 }
 
 function openInEditor(rel, line) {
-  // VS Code expects vscode://file/<abs> with forward slashes. On Windows REPO_ABS uses
-  // backslashes; the old "vscode://file" + abs glued into "vscode://fileD:..." which the
-  // protocol handler ignores. (Backslash regex is quadrupled: Python string -> JS source.)
-  const abs = (REPO_ABS + "/" + rel).replace(/\\\\/g, "/");
-  const path = abs.startsWith("/") ? abs : "/" + abs;
-  const href = "vscode://file" + encodeURI(path) + (line ? ":" + line : "");
-  // Probe hook for Playwright helpers (and anyone else listening): fires before the
-  // custom-protocol navigation, which headless Chromium often cannot complete.
-  window.dispatchEvent(new CustomEvent("codecity-open-editor", {
-    detail: { path: rel, line: line || null, href },
-  }));
-  // Helpers set this so a successful jump can be asserted without tearing down the page.
-  if (window.__codecityPreventEditorNav) return;
-  window.location.href = href;
+  const abs = REPO_ABS + "/" + rel;
+  window.location.href = "vscode://file" + encodeURI(abs) + (line ? ":" + line : "");
 }
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0x8592a3, 2.1));
@@ -2653,10 +2614,9 @@ function colorFor(value, max) {
 }
 
 // Off the ramp entirely: a building the current metric has no measurement for. Only
-// CRAP and coverage can be in this state, and only where JaCoCo never loaded the class
-// (a module the build skipped, code generated at build time). A mid grey, because both
-// ends of the ramp are already claimed by real answers and this one is "we do not know",
-// which must not be readable as either of them.
+// CRAP and coverage can be in this state, and only where the coverage report never
+// measured the file (suite skipped it, remap failed, or generated output with no
+// source map). Mid grey: both ramp ends are real answers; this is "we do not know".
 const UNMEASURED_COLOR = new THREE.Color(0x9aa0a6);
 function isMeasured(file, metric) {
   const v = file[metric];
@@ -4455,15 +4415,11 @@ function showStreetsFor(entry) {
   const group = new THREE.Group();
   for (const kind of ROAD_KINDS) {
     const roadway = sinkMesh(sinks[kind].road, roadMaterial[kind], 0);
-    const lane = sinkMesh(sinks[kind].lane, flowMaterial[kind], 1);
     // Quad i of this geometry is triangles 2i and 2i+1, so a raycast's faceIndex >> 1 is
-    // the index into the owner table the sink filled as it was built. Lane has the same
-    // quad order as the roadway (addRoad pushes both in lockstep), so it shares the
-    // owner table — a thicker/higher pick target for ⌘/Ctrl-click.
-    const owners = sinks[kind].road.owner;
-    if (roadway) roadway.userData.roadOwners = owners;
-    if (lane) lane.userData.roadOwners = owners;
-    for (const mesh of [roadway, lane,
+    // the index into the owner table the sink filled as it was built.
+    if (roadway) roadway.userData.roadOwners = sinks[kind].road.owner;
+    for (const mesh of [roadway,
+                        sinkMesh(sinks[kind].lane, flowMaterial[kind], 1),
                         sinkMesh(sinks[kind].gate, gateMaterial[kind], 2),
                         sinkMesh(sinks[kind].gateSide, gateSideMaterial[kind], 2)]) {
       if (mesh) group.add(mesh);
@@ -4806,8 +4762,8 @@ const HOVER_PROPS = [
   { key: "fan_out", label: "outgoing coupling (fan out)" },
   { key: "instability", label: "instability Ce/(Ce+Ca)" },
   { key: "cochange_out", label: "cross-package co-change" },
-  // Only in a city built with a JaCoCo report; `crap` marks the rows that go with it.
-  { key: "coverage", label: "line coverage", crap: true, fmt: pctOrUnmeasured },
+  // Only when an Istanbul report was joined; `crap` marks the rows that go with it.
+  { key: "coverage", label: "statement coverage", crap: true, fmt: pctOrUnmeasured },
   { key: "coverage_acceptance", label: "acceptance coverage", acceptance: true,
     fmt: pctOrUnmeasured },
   { key: "crap_max", label: "worst method CRAP", crap: true, fmt: crapOrUnmeasured,
@@ -5183,10 +5139,11 @@ function applyScopePick() {
   scopeTo(value);
 }
 
-// ⌘/Ctrl-click a road and land on the line that makes the coupling. Roadway + lane meshes
+// ⌘/Ctrl-click a road and land on the line that makes the coupling. The roadway meshes
 // are merged per direction, so the hit comes back as a triangle index rather than as an
-// object; `roadOwners` turns it back into the one edge that quad was laid for. Gates are
-// not pickable (no owner table) — they would only mask the stretch underneath.
+// object; `roadOwners` turns it back into the one edge that quad was laid for. Only the
+// roadway is tested — the lane and the gates sit on top of it and would only ever mask
+// the wider thing underneath.
 function pickRoadJump(event) {
   // Also called from applyCursor, which is wired to keydown/keyup as well: a keyboard
   // event has no clientX, and casting a ray through a NaN pointer is nonsense the
@@ -5201,35 +5158,28 @@ function pickRoadJump(event) {
   return hit.object.userData.roadOwners[hit.faceIndex >> 1] || null;
 }
 
-function isSceneClickTarget(target) {
-  if (target === renderer.domElement) return true;
-  // CSS2D coupling labels sit above the canvas. A ⌘/Ctrl-click aimed at the road under
-  // a name must still reach pickRoadJump rather than being ignored as "UI".
-  return !!(target && target.closest && target.closest(".coupling-label"));
-}
-
 function onSceneClick(event) {
-  if (introEl) return;
+  if (introEl || event.target !== renderer.domElement) return;   // ignore UI / overlay clicks
   if (performance.now() - lastScopeAt < 350) return;             // swallow the 2nd click of a double-click
   if (pointerDownAt) {
     const moved = Math.hypot(event.clientX - pointerDownAt.x, event.clientY - pointerDownAt.y);
     if (moved > 6) return;                                        // it was a drag (pan/orbit), not a click
   }
   // ⌘/Ctrl-click on a road: into the code, at the line that couples the two classes.
-  // Handled BEFORE the canvas-target check: CSS2D overlays / panel chrome can sit above
-  // the WebGL canvas, but pointerdown already raycast-armed the jump from clientX/Y.
+  // Tried before anything else that ⌘ means, and only while a bundle is actually up —
+  // with no roads on the plate this is not a gesture at all and everything below still
+  // sees the click.
   // ⌥ may still be down — holding it to see the roads and ⌘-clicking one of them is the
-  // gesture. ⌘ wins over the ⌥-click pin below, which is why this is tested first.
+  // gesture, not a two-step ritual of pin-then-click. ⌘ wins over the ⌥-click pin below,
+  // which is why this is tested first.
   if ((event.metaKey || event.ctrlKey) && !event[NAV_KEY]) {
-    const jump = pickRoadJump(event) || armedRoadJump;
-    armedRoadJump = null;
+    const jump = pickRoadJump(event);
     if (jump) {
       event.preventDefault();
       openInEditor(jump.path, jump.line);
       return;
     }
   }
-  if (!isSceneClickTarget(event.target)) return;   // ignore settings / howto / etc.
   // ⌥-click toggles the pin on the building's road bundle.
   if (event.altKey && !event.metaKey && !event.ctrlKey && !event[NAV_KEY]) {
     const hit = pickBuilding(event);
@@ -5989,13 +5939,7 @@ window.addEventListener("keyup", applyCursor);
 // Alt-Tabbing away releases the key somewhere we never hear about; without this the
 // wires would still be hanging in the city when you come back.
 window.addEventListener("blur", clearStreets);
-window.addEventListener("blur", () => {
-  pointerIsDown = false;
-  isDragging = false;
-  armedRoadJump = null;
-  releaseRoadJumpRotateLock();
-  renderer.domElement.style.cursor = "default";
-});
+window.addEventListener("blur", () => { pointerIsDown = false; isDragging = false; renderer.domElement.style.cursor = "default"; });
 window.addEventListener("dblclick", onDoubleClick);
 window.addEventListener("click", onSceneClick);
 window.addEventListener("keydown", (e) => {

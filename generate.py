@@ -7,8 +7,22 @@ REPO defaults to this process's git toplevel; OUT defaults to REPO/.codecity.
 Both are the friendlier spellings of HEATMAP_REPO / HEATMAP_OUT.
 
 Walks sources for Sonar-style cognitive complexity, internal coupling
-(dependency-cruiser via Node), joins git history, and renders. CRAP stays
-absent until v4.
+(dependency-cruiser via Node), optional Istanbul CRAP/coverage, joins git
+history, and renders.
+
+Coverage envs (ADR 0011):
+
+- ``CODECITY_COVERAGE`` — paths/globs to Istanbul ``coverage-final.json``
+  (``:`` / ``,``). Unset → auto-glob ``**/coverage/coverage-final.json``.
+- ``CODECITY_COVERAGE_ACCEPTANCE`` — optional second JSON →
+  ``coverage_acceptance`` only (never auto-globbed; no second CRAP).
+- ``CODECITY_COVERAGE_INCLUDE`` / ``CODECITY_COVERAGE_EXCLUDE`` — optional
+  building-path globs after normalize/remap (prefer narrowing the test
+  runner's coverage.include first).
+
+Emitted JS with ``inputSourceMap`` is remapped to original sources when
+needed. No report → CRAP UI stays off. ``generate.py`` never runs the
+target's tests.
 
 Install once in this repo: `pip install -r requirements.txt` and
 `npm install` (Node on PATH for coupling roads).
@@ -135,15 +149,18 @@ def main(argv: list[str]) -> int:
     print(f"repo:  {repo}", flush=True)
     print(f"out:   {out}", flush=True)
 
-    print("[1/6] cognitive complexity (tree-sitter JS/TS + Vue script)...", flush=True)
+    print("[1/7] cognitive complexity (tree-sitter JS/TS + Vue script)...", flush=True)
     _run("compute_complexity.py", env)
 
-    print("[2/6] coupling (dependency-cruiser fan-in/out + edges)...", flush=True)
+    print("[2/7] coupling (dependency-cruiser fan-in/out + edges)...", flush=True)
     # Keep Node include rules in sync with citylib.py (single source of truth).
     write_include_rules_json(HERE / "citylib_include.json")
     _run_node("compute_fanio.mjs", env, out)
 
-    print("[3/6] join git history + size into codemap.tsv...", flush=True)
+    print("[3/7] CRAP + coverage (Istanbul JSON + tree-sitter cyclomatic)...", flush=True)
+    _run("compute_crap.py", env)
+
+    print("[4/7] join git history + size into codemap.tsv...", flush=True)
     log = _run("build_heatmap.py", env)
 
     tsv = out / "codemap.tsv"
@@ -167,13 +184,13 @@ def main(argv: list[str]) -> int:
         f"{files} source JS/TS files · {commits} commits walked · {bugfix} bug-fix commits."
     )
 
-    print("[4/6] render interactive HTML...", flush=True)
+    print("[5/7] render interactive HTML...", flush=True)
     _run("render_heatmap.py", env)
 
-    print("[5/6] render Code City HTML...", flush=True)
+    print("[6/7] render Code City HTML...", flush=True)
     _run("render_codecity.py", env, {"HEATMAP_TITLE": env["CODECITY_TITLE"]})
 
-    print("[6/6] render combined side-by-side...", flush=True)
+    print("[7/7] render combined side-by-side...", flush=True)
     _run("render_combined.py", env)
 
     print(f"done -> {out / 'codemap.html'}")

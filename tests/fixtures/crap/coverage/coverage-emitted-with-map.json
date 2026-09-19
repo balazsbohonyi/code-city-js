@@ -1,0 +1,23 @@
+{
+  "build/out.js": {
+    "path": "build/out.js",
+    "statementMap": {
+      "0": {
+        "start": { "line": 1, "column": 0 },
+        "end": { "line": 1, "column": 20 }
+      }
+    },
+    "s": { "0": 4 },
+    "fnMap": {},
+    "f": {},
+    "branchMap": {},
+    "b": {},
+    "inputSourceMap": {
+      "version": 3,
+      "file": "out.js",
+      "sources": ["../src/straight.js"],
+      "names": [],
+      "mappings": "AACE"
+    }
+  }
+}

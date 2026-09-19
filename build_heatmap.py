@@ -4,8 +4,9 @@
 Complexity comes from `complexity-per-file.tsv` when present (v2 /
 `compute_complexity.py`); otherwise it stays 0. Fan-in/out come from
 `fanio-per-file.tsv` when present (v3 / `compute_fanio.mjs`); otherwise 0.
-CRAP columns stay empty until v4. Co-change comes out of the same history
-walk, so it is free and we keep it.
+CRAP / coverage come from `crap-per-file.tsv` when present (v4 /
+`compute_crap.py`); an unmeasured file stays blank, not zero. Co-change
+comes out of the same history walk, so it is free and we keep it.
 
 Path separators are normalised to `/` before anything is keyed: git log on
 Windows still emits POSIX paths, os.walk does not.
@@ -63,6 +64,7 @@ BUG_SUBJECT_RE = re.compile(_bug_subj_src, re.IGNORECASE) if _bug_subj_src else 
 OUT_FILE = os.path.join(OUT_DIR, "codemap.tsv")
 COMPLEXITY_FILE = os.path.join(OUT_DIR, "complexity-per-file.tsv")
 FANIO_FILE = os.path.join(OUT_DIR, "fanio-per-file.tsv")
+CRAP_FILE = os.path.join(OUT_DIR, "crap-per-file.tsv")
 
 bug_ids = set()
 if os.path.exists(BUG_FILE):
@@ -179,9 +181,52 @@ def _cochange_out(level, unit):
     return (cochange_escape[level][unit] / seen) if seen else 0.0
 
 
-def _crap_cols(_entry, _lines):
-    """v1: never measured. Empty, not zero — the renderer treats blank as absent."""
-    return ["", "", "", "", "", "", ""]
+def _crap_cols(entry, lines):
+    """CRAP/coverage cells for one row; blank when the unit was never measured."""
+    if not entry:
+        return ["", "", "", "", "", "", ""]
+    kloc = lines / 1000.0 if lines else 0
+    coverage = (
+        f"{100.0 * entry['cov_covered'] / entry['cov_total']:.1f}"
+        if entry["cov_total"]
+        else ""
+    )
+    acceptance = (
+        f"{100.0 * entry['acc_covered'] / entry['acc_total']:.1f}"
+        if entry.get("acc_total")
+        else ""
+    )
+    return [
+        coverage,
+        acceptance,
+        f"{entry['crap_max']:.1f}",
+        entry["crap_max_method"],
+        f"{entry['crap_load']:.1f}",
+        f"{(entry['crap_load'] / kloc) if kloc else 0:.1f}",
+        str(entry["crappy_methods"]),
+    ]
+
+
+def _crap_sum(entries):
+    """Roll file CRAP rows up for a package or module.
+
+    Coverage re-divides summed statement counters (not an average of %);
+    crap_max is the worst child; crap_load / crappy_methods sum.
+    """
+    measured = [e for e in entries if e]
+    if not measured:
+        return None
+    worst = max(measured, key=lambda e: e["crap_max"])
+    return {
+        "cov_covered": sum(e["cov_covered"] for e in measured),
+        "cov_total": sum(e["cov_total"] for e in measured),
+        "acc_covered": sum(e.get("acc_covered", 0) for e in measured),
+        "acc_total": sum(e.get("acc_total", 0) for e in measured),
+        "crap_max": worst["crap_max"],
+        "crap_max_method": worst["crap_max_method"],
+        "crap_load": sum(e["crap_load"] for e in measured),
+        "crappy_methods": sum(e["crappy_methods"] for e in measured),
+    }
 
 
 sha = None
@@ -313,6 +358,33 @@ if os.path.exists(FANIO_FILE):
 else:
     print(f"WARN: {FANIO_FILE} not found, fan-in/out will be 0", file=sys.stderr)
 
+# CRAP + coverage (compute_crap.py). Missing entry stays blank — not zero —
+# so unmeasured files stay grey on the page (ADR 0011 / ADR 0005).
+crap_map = {}
+if os.path.exists(CRAP_FILE):
+    with open(CRAP_FILE, encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("#") or line.startswith("file\t"):
+                continue
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) >= 8:
+                crap_map[posix_path(parts[0])] = {
+                    "cov_covered": int(parts[1]),
+                    "cov_total": int(parts[2]),
+                    "crap_max": float(parts[3]),
+                    "crap_max_method": parts[4],
+                    "crap_load": float(parts[5]),
+                    "crappy_methods": int(parts[6]),
+                    "acc_covered": int(parts[8]) if len(parts) >= 10 else 0,
+                    "acc_total": int(parts[9]) if len(parts) >= 10 else 0,
+                }
+    print(f"loaded CRAP/coverage for {len(crap_map)} files", file=sys.stderr)
+else:
+    print(
+        f"no {CRAP_FILE}: CRAP and coverage will be absent from this city",
+        file=sys.stderr,
+    )
+
 FILE_HEADER = (
     "path\tbytes\tlines\tcommits\tbug_commits\tcommits_per_kloc\tbugs_per_kloc\t"
     "bugs_per_commit\tcognitive_complexity\tcomplexity_per_kloc\tfan_in\tfan_out\t"
@@ -343,7 +415,7 @@ for ap in source_files:
     rows.append((
         rel, sz, lines, commits, bug_commits, commits_per_kloc, bugs_per_kloc,
         bugs_per_commit, cog, cog_per_kloc, fi, fo, committers,
-        _cochange_out("classes", rel), *_crap_cols(None, lines),
+        _cochange_out("classes", rel), *_crap_cols(crap_map.get(rel), lines),
     ))
 
 rows.sort(key=lambda r: (r[6], r[4], r[3]), reverse=True)
@@ -361,6 +433,7 @@ print(f"wrote {len(rows)} rows to {OUT_FILE}", file=sys.stderr)
 
 OUT_FILE_PKG = os.path.join(OUT_DIR, "codemap-packages.tsv")
 pkg_agg = {}
+pkg_crap = defaultdict(list)
 for r in rows:
     pkg = _district(r[0])
     a = pkg_agg.setdefault(pkg, [0, 0, 0, 0, 0, 0])
@@ -370,6 +443,7 @@ for r in rows:
     a[3] += r[8]
     a[4] += r[10]
     a[5] += r[11]
+    pkg_crap[pkg].append(crap_map.get(r[0]))
 
 PKG_HEADER = (
     "package\tfiles\tbytes\tlines\tcommits\tbug_commits\tcommits_per_kloc\t"
@@ -391,7 +465,7 @@ for pkg, (files, sz, lines, cog, fi, fo) in pkg_agg.items():
     pkg_rows.append((
         pkg, files, sz, lines, commits, bug_commits, commits_per_kloc,
         bugs_per_kloc, bugs_per_commit, cog, cog_per_kloc, fi, fo, committers,
-        _cochange_out("packages", pkg), *_crap_cols(None, lines),
+        _cochange_out("packages", pkg), *_crap_cols(_crap_sum(pkg_crap[pkg]), lines),
     ))
 
 pkg_rows.sort(key=lambda r: (r[6], r[5], r[4]), reverse=True)
@@ -410,6 +484,7 @@ print(f"wrote {len(pkg_rows)} package rows to {OUT_FILE_PKG}", file=sys.stderr)
 
 OUT_FILE_MOD = os.path.join(OUT_DIR, "codemap-modules.tsv")
 mod_agg = {}
+mod_crap = defaultdict(list)
 for r in rows:
     mod = _module(r[0])
     a = mod_agg.setdefault(mod, [0, 0, 0, 0, 0, 0])
@@ -419,6 +494,7 @@ for r in rows:
     a[3] += r[8]
     a[4] += r[10]
     a[5] += r[11]
+    mod_crap[mod].append(crap_map.get(r[0]))
 
 MOD_HEADER = (
     "module\tfiles\tbytes\tlines\tcommits\tbug_commits\tcommits_per_kloc\t"
@@ -440,7 +516,7 @@ for mod, (files, sz, lines, cog, fi, fo) in mod_agg.items():
     mod_rows.append((
         mod, files, sz, lines, commits, bug_commits, commits_per_kloc,
         bugs_per_kloc, bugs_per_commit, cog, cog_per_kloc, fi, fo, committers,
-        _cochange_out("modules", mod), *_crap_cols(None, lines),
+        _cochange_out("modules", mod), *_crap_cols(_crap_sum(mod_crap[mod]), lines),
     ))
 
 mod_rows.sort(key=lambda r: (r[3], r[4]), reverse=True)

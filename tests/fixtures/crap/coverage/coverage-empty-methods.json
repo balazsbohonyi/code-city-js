@@ -1,0 +1,11 @@
+{
+  "src/empty.js": {
+    "path": "src/empty.js",
+    "statementMap": {},
+    "s": {},
+    "fnMap": {},
+    "f": {},
+    "branchMap": {},
+    "b": {}
+  }
+}

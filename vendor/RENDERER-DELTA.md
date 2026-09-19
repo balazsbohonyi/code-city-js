@@ -27,7 +27,11 @@ same-named folder to one district. Do not edit the Java repo.
    origin + howto credit Wettel and Victor's Java city as the guide; recipe is
    `pip install -r requirements.txt` + `npm install` once, then
    `python generate.py` for JS/TS (React/Vue/none). Howto notes complexity
-   height + ⌥ coupling roads; CRAP still later. Filter suggestions from
+   height + ⌥ coupling roads; howto documents `CODECITY_COVERAGE` → Istanbul
+   JSON for coverage/CRAP (v4 / ADR 0011 — no renderer geometry change; TSV
+   presence turns existing colour options / Coverage preset on). Colour option
+   + hover label say **statement** coverage (engine grain), not JaCoCo “line”.
+   Filter suggestions from
    `citylib.filter_suggestions` (folders, `use*`, CamelCase prefixes) — not
    `*Service`. Empty filter placeholder is `__FILTER_PLACEHOLDER__` from
    `citylib.filter_placeholder` (top globs for this city), not a hard-coded

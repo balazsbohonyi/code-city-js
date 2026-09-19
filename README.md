@@ -3,8 +3,9 @@
 Turn any git checkout of **JavaScript / TypeScript** into a **3-D city you can
 walk around**: one building per file, districts per folder, its height and
 colour driven by whatever you want to see — size, cognitive complexity, churn,
-bug-fixes, and **internal coupling roads**. Plus the 2-D **codemap** it ships
-with: a treemap next to a log–log scatter.
+bug-fixes, **internal coupling roads**, and **coverage / CRAP** when you point
+at an Istanbul report. Plus the 2-D **codemap** it ships with: a treemap next
+to a log–log scatter.
 
 This is a port of [Victor Rentea's Code City](https://github.com/victorrentea/code-city)
 from Java to the JS/TS world — React, Vue, or no framework. The original is
@@ -18,9 +19,10 @@ disk.
 
 *Visual Studio Code: 9302 source files, 1722 folders — one run, one page.
 Height is cognitive complexity (Sonar-style via tree-sitter), colour is
-commits per KLOC on a log ramp. Hold ⌥ for internal coupling roads. CRAP is
-a later version, not faked from LOC. Plain hover worst ~9.5 ms on this plate
-(budget under 50 ms).*
+commits per KLOC on a log ramp. Hold ⌥ for internal coupling roads. Point
+`CODECITY_COVERAGE` at an Istanbul `coverage-final.json` to colour by
+coverage / CRAP (not faked from LOC). Plain hover worst ~9.5 ms on this
+plate (budget under 50 ms).*
 
 ## Install (once per machine / env)
 
@@ -120,7 +122,8 @@ is VS Code (`vscode://file/…`). Unset `HEATMAP_OPEN_IN` to disable it.
 | `cochange_out` | of the commits that touched this file, the share that also reached outside its folder, weighted by how far out | computed |
 | `cognitive_complexity` | Sonar-style cognitive complexity, summed over functions in the file (tree-sitter). JS/TS/JSX/TSX, plus Vue `<script>` / `<script setup>` — not templates. `??` counts in boolean groups (intentional); `?.` does not. | computed |
 | `fan_in` / `fan_out` | how many **repo** files import this file / it imports | computed |
-| `coverage` / `crap_max` / `crap_load` | line coverage and CRAP from a test run | reserved (absent, not zero) |
+| `coverage` / `crap_max` / `crap_load` | statement coverage and CRAP from an Istanbul report | when `CODECITY_COVERAGE` (or a default `coverage/coverage-final.json`) is present |
+| `coverage_acceptance` | optional second suite (browser / Playwright / …) | only if `CODECITY_COVERAGE_ACCEPTANCE` is set |
 
 **Coupling roads.** Hold **⌥ / Alt** over a building to draw roads to the
 files it depends on (and that depend on it). Edges come from
@@ -129,18 +132,62 @@ files it depends on (and that depend on it). Edges come from
 `require()` counted, static `import('…')` counted, and **barrels resolved
 through** so roads aim at real peers instead of stopping on every `index.ts`.
 Road thickness is how often the source names the target; click lands on the
-first non-import use when we can find one. CRAP columns stay absent until a
-later version — still **not** faked from LOC. Default HEIGHT is cognitive
+first non-import use when we can find one. Default HEIGHT is cognitive
 complexity; COLOR = commits per KLOC is still the churn reading.
+
+**CRAP / coverage.** `generate.py` never runs your tests. Point it at an
+Istanbul **`coverage-final.json`** already produced by c8, nyc, Vitest,
+Jest, etc.:
+
+```bash
+# bash — explicit path (also accepts globs; ":" or "," separated)
+CODECITY_COVERAGE=coverage/coverage-final.json \
+  python /path/to/code-city-js/generate.py /path/to/your-repo
+```
+
+```powershell
+$env:CODECITY_COVERAGE = "coverage/coverage-final.json"
+python C:\path\to\code-city-js\generate.py C:\path\to\your-repo
+```
+
+Unset, it auto-globs `**/coverage/coverage-final.json` under the repo
+(skipping `node_modules` / `.git`). No report → those colour options and
+the Coverage preset stay **off** (not painted as 0%). With a report, colour
+gains `coverage` / `crap_max` / `crap_load`; hover names the worst method.
+`crap_max` is pinned at Savoia's threshold **30**. Formula:
+`CRAP(m) = CC² × (1 − cov)³ + CC` using **cyclomatic** complexity (tree-sitter)
+and statement coverage inside each function — never the cognitive score used
+for height. Optional `CODECITY_COVERAGE_ACCEPTANCE` fills
+`coverage_acceptance` only (no second CRAP; never auto-globbed). Overview
+stays the open default when only unit coverage exists; click the Coverage
+preset to paint the plate.
+
+**Keep the report honest, not noisy.** Prefer narrowing what the *test
+runner* instruments (`coverage.include` / `coverage.exclude` in Vitest, c8,
+Jest, …) so Istanbul never lists UI you did not mean to score. As a second
+line of defence, the city can filter buildings after reading the report:
+
+| Env | Effect |
+| --- | --- |
+| `CODECITY_COVERAGE_INCLUDE` | keep only matching repo-relative paths (`:` / `,` globs, `**` ok) |
+| `CODECITY_COVERAGE_EXCLUDE` | drop matching paths (applied after include) |
+
+Example — city cares about library code even if the JSON also lists components:
+
+```powershell
+$env:CODECITY_COVERAGE_INCLUDE = "src/lib/**"
+python C:\path\to\code-city-js\generate.py C:\path\to\your-repo
+```
+
+Files dropped by these globs are **absent** (grey), not painted as 0% CRAP.
 
 **Presets.** **Overview** is absolute complexity (tall = hard to follow).
 **Complexity density** puts `/kloc` on height as well — complexity *per
 thousand lines* — so large complex files shrink toward the pack and the
 skyline looks flatter; that is intentional, not a missing score.
 
-**Absence is not zero.** When coverage/CRAP exist they will be missing on
-files the report never measured, and those buildings will be grey, not “0%
-covered.” Same rule as the Java city with JaCoCo.
+**Absence is not zero.** Files the coverage report never measured stay grey,
+not “0% covered.” Same rule as the Java city with JaCoCo.
 
 ## Skipping demos (`HEATMAP_PRUNE`)
 
@@ -196,20 +243,19 @@ python generate.py /path/to/your-repo
 
 | Step | Script | Produces |
 | --- | --- | --- |
-| 1 | `compute_complexity.py` | `complexity-per-file.tsv` (Sonar-style scores) |
+| 1 | `compute_complexity.py` | `complexity-per-file.tsv` (Sonar-style cognitive scores) |
 | 2 | `compute_fanio.mjs` | `fanio-per-file.tsv` + `coupling-edges.tsv` (needs Node) |
-| 3 | `build_heatmap.py` | `codemap.tsv` (git + size + complexity + fanio) + packages/modules + `cochange-edges.tsv` |
-| 4 | `render_heatmap.py` | `codemap.html` |
-| 5 | `render_codecity.py` | `codecity.html` |
-| 6 | `render_combined.py` | `combined.html` |
+| 3 | `compute_crap.py` | `crap-per-file.tsv` when Istanbul JSON is found; else deletes a stale one |
+| 4 | `build_heatmap.py` | `codemap.tsv` (git + size + complexity + fanio + CRAP) + packages/modules + `cochange-edges.tsv` |
+| 5 | `render_heatmap.py` | `codemap.html` |
+| 6 | `render_codecity.py` | `codecity.html` |
+| 7 | `render_combined.py` | `combined.html` |
 
 `citylib.py` is the JS/TS front of inclusion: which files count, how a folder
 becomes a district, how a `package.json` becomes a module, which bucket a
 file uses in the 2-D treemap (repo-root files under `root`, so Plotly never
 sees duplicate ids), and which globs the filter box offers for *this* city
 (not a hard-coded `*Service` or a PFA-only `..lib.* · use*` hint).
-
-A later version adds CRAP from Istanbul/c8/Vitest coverage.
 
 ## CodeCity
 
@@ -299,6 +345,10 @@ beats a new engine.
 | `HEATMAP_PRUNE` | extra folder **names** to skip, comma-separated (`playground,docs`). Path segments inside the repo only — see [Skipping demos](#skipping-demos-heatmap_prune) |
 | `HEATMAP_ROAD_EDGE_CAP` | max coupling edges kept **per direction per file** in `coupling-edges.tsv` for ⌥ drawing (default `80`, matches the renderer). `fan_in` / `fan_out` counts stay full |
 | `HEATMAP_BUG_COMMIT_REGEX` | regex on the commit subject that flags a bug-fix (`""` disables it) |
+| `CODECITY_COVERAGE` | paths/globs to Istanbul `coverage-final.json` (`:` / `,`). Unset → auto-glob `**/coverage/coverage-final.json` |
+| `CODECITY_COVERAGE_ACCEPTANCE` | optional second Istanbul JSON → `coverage_acceptance` only (never auto-globbed) |
+| `CODECITY_COVERAGE_INCLUDE` | optional repo-relative globs; keep only matching buildings after remap |
+| `CODECITY_COVERAGE_EXCLUDE` | optional repo-relative globs; drop matching buildings (after include) |
 | `HEATMAP_TITLE` / `HEATMAP_SUBTITLE` / `CODECITY_TITLE` | page heading text |
 | `HEATMAP_OPEN_IN` | `vscode` to enable ⌘/Ctrl-click-to-open (empty = off) |
 | `HEATMAP_REPO_ABS` | absolute repo root for editor links (default: `HEATMAP_REPO`) |
@@ -313,5 +363,6 @@ and documented there.
 
 This repo redoes the **language front-end** (what a building is, which files
 count, how git history joins them, cognitive complexity via tree-sitter,
-coupling via dependency-cruiser) and keeps the **city** until there is a
-reason not to. CRAP is a later version, not silent zeros.
+coupling via dependency-cruiser, CRAP from Istanbul + cyclomatic) and keeps
+the **city** until there is a reason not to. Unmeasured coverage stays
+absent, not silent zeros.
