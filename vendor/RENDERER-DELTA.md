@@ -30,7 +30,10 @@ same-named folder to one district. Do not edit the Java repo.
    height + ⌥ coupling roads; howto documents `CODECITY_COVERAGE` → Istanbul
    JSON for coverage/CRAP (v4 / ADR 0011 — no renderer geometry change; TSV
    presence turns existing colour options / Coverage preset on). Colour option
-   + hover label say **statement** coverage (engine grain), not JaCoCo “line”.
+   + hover label say **statement** coverage (engine grain), not JaCoCo “line”;
+   not “all tests” (acceptance is a separate column). CRAP copy is worst
+   **function**, not method. Co-change copy is cross-**folder**, not package.
+   Fan-in/out notes say files, not classes. Zoom-to tooltip drills a folder.
    Filter suggestions from
    `citylib.filter_suggestions` (folders, `use*`, CamelCase prefixes) — not
    `*Service`. Empty filter placeholder is `__FILTER_PLACEHOLDER__` from

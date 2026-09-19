@@ -1598,11 +1598,11 @@ html = """<!doctype html>
       <option value="instability">instability Ce/(Ce+Ca)</option>
       <option value="fan_in">incoming coupling</option>
       <option value="fan_out">outgoing coupling</option>
-      <option value="cochange_out">cross-package co-change</option>
-      <option value="crap_max">CRAP &mdash; worst method</option>
+      <option value="cochange_out">cross-folder co-change</option>
+      <option value="crap_max">CRAP &mdash; worst function</option>
       <option value="crap_load">CRAP load</option>
-      <option value="coverage">statement coverage % (all tests)</option>
-      <option value="coverage_acceptance">acceptance coverage % (UI)</option>
+      <option value="coverage">statement coverage %</option>
+      <option value="coverage_acceptance">acceptance coverage %</option>
     </select>
     <label class="checkbox" title="Divide by thousands of lines, turning the count into a density.">
       <input id="colorKloc" type="checkbox" checked aria-label="colour per KLOC"> /kloc
@@ -1614,7 +1614,7 @@ html = """<!doctype html>
     <div class="metricNote spanAll" id="colorNote"></div>
 
     <span class="knob">Zoom to</span>
-    <div class="filterRow" title="Drill into one package — the same scope shift-clicking a floor gives you">
+    <div class="filterRow" title="Drill into one folder — the same scope shift-clicking a floor gives you">
       <input id="scopePick" type="text" spellcheck="false" autocomplete="off"
              list="allPackages" placeholder="whole city">
       <datalist id="allPackages"></datalist>
@@ -4533,8 +4533,8 @@ function nameTheBundle(entry, bundle) {
 const CRIME_SUBJECT = 0x1e3a8a;     // the hovered building: deep blue, off the heat ramp
 
 // No checkbox of its own: this IS the colour metric, asked of one building. Choose
-// "cross-package co-change" on COLOR and the city shows you WHICH classes are leaking
-// out of their package; hold Shift over one and it shows you WHO they leak to. A row in
+// "cross-folder co-change" on COLOR and the city shows you WHICH files are leaking
+// out of their folder; hold Shift over one and it shows you WHO they leak to. A row in
 // the panel for something that only makes sense while one metric is picked would be a
 // row that is dead most of the time.
 function coChangeOn() { return HAS_COCHANGE && colorMetricKey() === "cochange_out"; }
@@ -4820,12 +4820,12 @@ const HOVER_PROPS = [
   { key: "fan_in", label: "incoming coupling (fan in)" },
   { key: "fan_out", label: "outgoing coupling (fan out)" },
   { key: "instability", label: "instability Ce/(Ce+Ca)" },
-  { key: "cochange_out", label: "cross-package co-change" },
+  { key: "cochange_out", label: "cross-folder co-change" },
   // Only when an Istanbul report was joined; `crap` marks the rows that go with it.
   { key: "coverage", label: "statement coverage", crap: true, fmt: pctOrUnmeasured },
   { key: "coverage_acceptance", label: "acceptance coverage", acceptance: true,
     fmt: pctOrUnmeasured },
-  { key: "crap_max", label: "worst method CRAP", crap: true, fmt: crapOrUnmeasured,
+  { key: "crap_max", label: "worst function CRAP", crap: true, fmt: crapOrUnmeasured,
     note: worstMethodNote },
   { key: "crap_load", label: "CRAP load", crap: true, sub: "crap_per_kloc",
     fmt: crapOrUnmeasured },
@@ -4842,13 +4842,13 @@ function crapOrUnmeasured(v) {
   return (v === null || v === undefined) ? UNMEASURED_NOTE : fmtMetric(Number(v));
 }
 
-// CRAP is a METHOD's number; a class only has one because we took its worst. Naming that
-// method is what turns "this class is crap" into somewhere to actually go, and in a
-// package or module row it names the single worst method anywhere inside it.
+// CRAP is a FUNCTION's number; a file only has one colour because we took its worst.
+// Naming that function is what turns "this file is crap" into somewhere to actually go,
+// and in a folder or module row it names the single worst function anywhere inside it.
 function worstMethodNote(file) {
   if (!isMeasured(file, "crap_max") || !file.crap_max_method) return "";
   const crappy = Number(file.crappy_methods) || 0;
-  const over = crappy > 1 ? `, ${crappy} methods over 30`
+  const over = crappy > 1 ? `, ${crappy} functions over 30`
              : crappy === 1 ? ", the only one over 30"
              : "";
   return ` <span class="perkloc">in ${escapeXml(file.crap_max_method)}()${over}</span>`;
@@ -5788,19 +5788,19 @@ const METRIC_NOTES = {
           href: "https://codescene.com/blog/prioritize-technical-debt/"},
   committers: {note: "how many people have touched it",
           href: "https://en.wikipedia.org/wiki/Bus_factor"},
-  fan_in: {note: "how many classes depend on it",
+  fan_in: {note: "how many files import it",
           href: "https://en.wikipedia.org/wiki/Coupling_(computer_programming)"},
-  fan_out: {note: "how many classes it depends on",
+  fan_out: {note: "how many files it imports",
           href: "https://en.wikipedia.org/wiki/Coupling_(computer_programming)"},
   instability: {note: "0 = only depended on, 1 = only depends",
           href: "https://en.wikipedia.org/wiki/Software_package_metrics"},
-  cochange_out: {note: "how often it changes with another package",
+  cochange_out: {note: "how often it changes with another folder",
           href: "https://en.wikipedia.org/wiki/Logical_coupling"},
-  crap_max: {note: "its worst method: complexity no test ran",
+  crap_max: {note: "its worst function: complexity no test ran",
           href: "https://testing.googleblog.com/2011/02/this-code-is-crap.html"},
   crap_load: {note: "how much complexity no test ran",
           href: "https://testing.googleblog.com/2011/02/this-code-is-crap.html"},
-  coverage: {note: "how much of it any test runs",
+  coverage: {note: "how much of it the coverage report ran",
           href: "https://martinfowler.com/bliki/TestCoverage.html"},
   coverage_acceptance: {note: "how much of it the browser alone runs",
           href: "https://martinfowler.com/bliki/TestPyramid.html"},

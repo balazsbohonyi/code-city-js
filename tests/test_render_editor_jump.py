@@ -62,3 +62,22 @@ def test_city_html_locks_rotate_on_ctrl_building_or_road(tmp_path: Path) -> None
 def test_city_html_keeps_lane_road_owners(tmp_path: Path) -> None:
     html = _render_city(tmp_path, r"D:\fake\repo")
     assert "lane.userData.roadOwners" in html
+
+
+def test_city_html_js_metric_copy(tmp_path: Path) -> None:
+    html = _render_city(tmp_path, r"D:\fake\repo")
+    assert 'value="cochange_out">cross-folder co-change</option>' in html
+    assert "cross-package co-change" not in html
+    assert "CRAP &mdash; worst function" in html
+    assert "worst method" not in html
+    assert "statement coverage % (all tests)" not in html
+    assert "acceptance coverage % (UI)" not in html
+    assert ">statement coverage %</option>" in html
+    assert ">acceptance coverage %</option>" in html
+    assert "how many files import it" in html
+    assert "how many files it imports" in html
+    assert "how often it changes with another folder" in html
+    assert "its worst function: complexity no test ran" in html
+    assert "how much of it the coverage report ran" in html
+    assert "Drill into one folder" in html
+    assert "${crappy} functions over 30" in html

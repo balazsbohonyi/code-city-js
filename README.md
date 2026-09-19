@@ -317,7 +317,7 @@ toolbar:
 | row | what it sets |
 | --- | --- |
 | `FILTER` | AspectJ-style glob (`..components.*`, `..lib..`, `use*`, `*Dialog`). It is a text box **with a dropdown** (its chevron always visible, or nobody finds it): the generator offers the biggest folders and the name families it finds — `use*` hooks, CamelCase prefixes shared by ≥ 3 files, clustered suffixes (`*Dialog`, `*Chart`) — each with its file count. |
-| `PRESET` | ten coloured bubbles, one click each: a saved reading of the city (overview, hotspots, bug density, complexity density, knowledge risk, coupling, instability, churn vs. team, plain size, dependencies). A bubble sets all three metrics *and* the four bits below; the row's caption spells out which reading you are on, and reads *Custom* as soon as you turn any knob under it. |
+| `PRESET` | five coloured bubbles, always: Overview, Hotspots, Complexity density, Knowledge risk, Coupling. Coverage joins the row when an Istanbul report was found; Acceptance reach when `CODECITY_COVERAGE_ACCEPTANCE` filled a second suite. Each bubble is a saved reading — it sets all three metrics *and* the four bits below (`/kloc` × 3, `lg`). The name is in the tooltip (a row of names would be a menu); what the bubble *did* is the three dropdowns it moved. There is no caption that flips to *Custom*. |
 | `AREA` / `HEIGHT` / `COLOR` | the metric on that axis, plus a **`/kloc`** checkbox that swaps a raw count for its density twin (complexity, commits, bugfixes). Where no density exists the checkbox greys out instead of disappearing, so the rows keep their shape. Colour also carries **`lg`**, the log-vs-linear ramp: it ticks itself to what the chosen metric wants and remembers your override per metric for the session. Default reading: area = file size, height = cognitive complexity, colour = commits per KLOC (log). |
 | `ZOOM TO` | drill into one folder by name, with autocomplete over every folder in the current lens — the typed form of shift-clicking a floor. |
 | `FOLDERS` | folder-name style: floating tags, on the floor, or off. |
@@ -843,7 +843,7 @@ them as flawlessly tested code.
 
 **A building is a file; CRAP is a function's number.** The colour metric is
 the worst function in the file, and the hover names it —
-`worst method CRAP: 420 in resolve(), 3 methods over 30` — because "this
+`worst function CRAP: 420 in resolve(), 3 functions over 30` — because "this"
 file is crap" is only useful once it tells you where to go. `CRAP load`
 sums the whole file for the "how much of it" reading, and takes a `/KLOC`
 density like the other counts do. Folders and modules roll up the same way:
