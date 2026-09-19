@@ -114,11 +114,9 @@ block, which is the truth.
 The city does not special-case “this is a React app.” It special-cases file
 kinds.
 
-A `.svelte` file is still a building (it has a footprint). Cognitive complexity
-and coupling today walk JavaScript, TypeScript, JSX/TSX, and Vue `<script>` /
-`<script setup>` — not Vue templates, and not Svelte / Angular / Astro
-templates. Support for template complexity and those other frameworks is
-coming.
+Cognitive complexity and coupling today walk JavaScript, TypeScript, JSX/TSX,
+and Vue `<script>` / `<script setup>` — not Vue templates. Support for
+Angular, Svelte, and Astro is coming.
 
 ## How this differs from the Java Code City
 
@@ -140,7 +138,7 @@ rows the city already knows how to draw.
 
 The 2-D treemap buckets repo-root files under `root` (never the filename as
 its own parent id — that blanks Plotly). Filter suggestions are folders and
-JS/TS name families (`..components.*`, `use*`, `*Dialog`), not `*Service`.
+JS/TS name families (`..components.*`, `..use*`, `*Dialog`), not `*Service`.
 
 Geometry, camera, streets, change marks, and hover budget are documented in
 [CodeCity](#codecity) below — they are the same arguments as the Java city,
@@ -327,7 +325,7 @@ toolbar:
 
 | row | what it sets |
 | --- | --- |
-| `FILTER` | AspectJ-style glob (`..components.*`, `..lib..`, `use*`, `*Dialog`). It is a text box **with a dropdown** (its chevron always visible, or nobody finds it): the generator offers the biggest folders and the name families it finds — `use*` hooks, CamelCase prefixes shared by ≥ 3 files, clustered suffixes (`*Dialog`, `*Chart`) — each with its file count. |
+| `FILTER` | AspectJ-style glob (`..components.*`, `..lib..`, `..use*`, `*Dialog`). It is a text box **with a dropdown** (its chevron always visible, or nobody finds it): the generator offers the biggest folders and the name families it finds — `use*` hooks, CamelCase prefixes shared by ≥ 3 files, clustered suffixes (`*Dialog`, `*Chart`) — each with its file count. |
 | `PRESET` | five coloured bubbles, always: Overview, Hotspots, Complexity density, Knowledge risk, Coupling. Coverage joins the row when an Istanbul report was found; Acceptance reach when `CODECITY_COVERAGE_ACCEPTANCE` filled a second suite. Each bubble is a saved reading — it sets all three metrics *and* the four bits below (`/kloc` × 3, `lg`). The name is in the tooltip (a row of names would be a menu); what the bubble *did* is the three dropdowns it moved. There is no caption that flips to *Custom*. |
 | `AREA` / `HEIGHT` / `COLOR` | the metric on that axis, plus a **`/kloc`** checkbox that swaps a raw count for its density twin (complexity, commits, bugfixes). Where no density exists the checkbox greys out instead of disappearing, so the rows keep their shape. Colour also carries **`lg`**, the log-vs-linear ramp: it ticks itself to what the chosen metric wants and remembers your override per metric for the session. Default reading: area = file size, height = cognitive complexity, colour = commits per KLOC (log). |
 | `ZOOM TO` | drill into one folder by name, with autocomplete over every folder in the current lens — the typed form of shift-clicking a floor. |
@@ -865,13 +863,10 @@ let a 3-line fully covered file outvote a 300-line untested one.
 ### Two suites, two numbers
 
 A browser-driven acceptance suite (Playwright, Cypress, …) often does not
-share a process with the unit tests. By default every statement only an
-acceptance test ever reaches counts as uncovered. For CRAP that is not
-noise, it is a one-directional error: the cube punishes `cov = 0`, so a
-function tested impeccably through the browser is coloured exactly like one
-nobody has ever run.
-
-Point the tool at both reports and it carries both readings:
+share a process with the unit tests. Point `CODECITY_COVERAGE` at the
+report(s) you want **CRAP and `coverage`** scored from (several JSONs there
+*are* merged). `CODECITY_COVERAGE_ACCEPTANCE` is a second colour only — what
+that suite alone walks through — and **never** enters the CRAP formula.
 
 ```bash
 CODECITY_COVERAGE=coverage/coverage-final.json \
@@ -879,13 +874,14 @@ CODECITY_COVERAGE_ACCEPTANCE=coverage-acceptance/coverage-final.json \
   python /path/to/code-city-js/generate.py /path/to/your-repo
 ```
 
-- **`statement coverage %`** — every suite merged. This is the honest
-  denominator for "is this tested", and it is the one CRAP is computed from.
-- **`acceptance coverage %`** — what the browser (or second suite) alone
-  walks through. Colour the city by it and you are asking a different
-  question: not *is this tested*, but *does any user-facing journey reach
-  this code at all*. A complex file that is red here and green on the merged
-  metric is unit-tested and unreachable from the product's own front door.
+- **`statement coverage %` / CRAP** — from `CODECITY_COVERAGE` only.
+- **`acceptance coverage %`** — from `CODECITY_COVERAGE_ACCEPTANCE` alone.
+  Colour the city by it to ask: does any user-facing journey reach this
+  code? A file green on coverage and red here is unit-tested and
+  unreachable from the product's front door.
+
+If you want Playwright (or other) hits to count toward CRAP, put that JSON
+in `CODECITY_COVERAGE`, not in `CODECITY_COVERAGE_ACCEPTANCE`.
 
 The acceptance report is never auto-discovered, only named: a
 `coverage-final.json` found lying around says nothing about which suite
@@ -1076,7 +1072,7 @@ What this port changes about the *picture* (the rest is in the delta log):
 - the default reading is **area = file size, height = cognitive complexity,
   colour = commits per KLOC** (log);
 - the filter dropdown offers folder and name globs that actually occur in
-  JS/TS trees (`..components.*`, `use*`, `*Dialog`), not `*Service`;
+  JS/TS trees (`..components.*`, `..use*`, `*Dialog`), not `*Service`;
 - public copy (clone URL, howto popover) is this repo.
 
 The same upstream also ships **`hover_cost.py`** and **`profile_city.py`** —
