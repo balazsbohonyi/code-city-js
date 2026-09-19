@@ -78,6 +78,9 @@ same-named folder to one district. Do not edit the Java repo.
    parent===id blanked the Plotly treemap while the scatter still drew).
 4. Treemap `branchvalues: 'remainder'` so module rows with value `0` stay
    grouping-only.
+5. `openInEditor` normalises Windows paths to `vscode://file/D:/...` (and the
+   same slash form for IntelliJ `api/file`), matching the 3-D city. The
+   upstream `vscode://file` + `D:\...` form is ignored by VS Code.
 
 ## `render_combined.py`
 

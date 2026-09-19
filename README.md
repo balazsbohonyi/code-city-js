@@ -96,13 +96,20 @@ does not. This port picks the closest honest analog and sticks to it:
 | District | the **folder** that contains it (`src/components/charts/BarChart.tsx` lives in `src.components.charts`) |
 | Module | the nearest ancestor **`package.json`** (a pnpm/npm workspace package, or the repo root) |
 
-Tests (`*.test.*`, `*.spec.*`, `test/`, `tests/`, `e2e/`, …), `node_modules`,
-`dist`, `.next` and other build output are not buildings. Demo trees
-(`examples/`, `playground/`) **are** buildings unless you name them in
-`HEATMAP_PRUNE` — [Skipping demos](#skipping-demos-heatmap_prune). A function
-is not a building, and neither is an exported React component — those are
-later lenses if they earn one. An 800-line `utils.ts` is one fat block,
-which is the truth.
+These are **not** buildings (always skipped, no knob):
+
+- **Tests:** folders named `test`, `tests`, `__tests__`, `e2e`, `cypress`,
+  `playwright`; infixes `*.test.*`, `*.spec.*`, `*.stories.*`, `*.test-d.ts`
+- **Build / deps / reports:** `node_modules`, `dist`, `build`, `out`,
+  `.next`, `.nuxt`, `.output`, `coverage`, `vendor`, `.turbo`, `.cache`,
+  `playwright-report`, `test-results`
+- **Generated / minified:** `*.d.ts`, `*.min.js`
+
+Demo trees (`examples/`, `playground/`) **are** buildings unless you name
+them in `HEATMAP_PRUNE` — [Skipping demos](#skipping-demos-heatmap_prune).
+A function is not a building, and neither is an exported React component —
+those are later lenses if they earn one. An 800-line `utils.ts` is one fat
+block, which is the truth.
 
 The city does not special-case “this is a React app.” It special-cases file
 kinds.
@@ -145,12 +152,15 @@ The page lets you put any column on **area**, **height** or **colour**. Colour
 is often a **ratio** (`/kloc`) on a log ramp, clamped at the p95 so a few
 extreme files don't wash out the rest.
 
-**Open a file in your editor:** ⌘/Ctrl-double-click a building. The city
-opens **VS Code** (`vscode://file/…`). The 2-D codemap also has an in-page
-picker for **IntelliJ** (IntelliJ uses its built-in web server, so the IDE
-must be running with *Settings ▸ Build, Execution, Deployment ▸ Debugger ▸
-"Allow unsigned requests"* enabled). Unset `HEATMAP_OPEN_IN` to disable
-click-to-open.
+**Open a file in your editor.** In the **city:** ⌘/Ctrl-double-click a
+building, or ⌘/Ctrl-click a jumpable road. That always opens **VS Code**
+(`vscode://file/D:/…` on Windows). In the **2-D codemap:** ⌘/Ctrl-click a
+file tile. `generate.py` defaults `HEATMAP_OPEN_IN=vscode`, which also
+shows an in-page VS Code / IntelliJ picker (IntelliJ uses its built-in web
+server, so the IDE must be running with *Settings ▸ Build, Execution,
+Deployment ▸ Debugger ▸ "Allow unsigned requests"* enabled). Set
+`HEATMAP_OPEN_IN=` (empty) to turn the **map** picker off. That env var
+does not gate the city.
 
 | Column | Meaning |
 | --- | --- |
@@ -199,9 +209,9 @@ sees duplicate ids), and which globs the filter box offers for *this* city
 
 ## Skipping demos (`HEATMAP_PRUNE`)
 
-The default skip list is things that are never the product: test folders,
-`node_modules`, `dist` / `build` / `.next` / `.nuxt`, coverage, vendored
-trees. It does **not** skip `examples/` or `playground/`.
+The always-on skip list is in [What a building is](#what-a-building-is)
+(tests, `node_modules`, build output, `*.d.ts`, `*.stories.*`, …). It does
+**not** skip `examples/` or `playground/`.
 
 Those folders are source, and they have `package.json` files, so they become
 districts *and* modules. On [expressjs/express](https://github.com/expressjs/express)
@@ -243,11 +253,12 @@ Unset `HEATMAP_PRUNE` is the whole-tree city.
 
 ## CodeCity
 
-`codecity.html` renders the same TSV as a Three.js CodeCity. Drag to pan,
-Cmd/Ctrl-drag to rotate, scroll to zoom around the mouse cursor, and
-Cmd/Ctrl-double-click a building to open its file in VS Code. The 2-D layout
-is computed in-browser with D3 treemap; Three.js extrudes each file tile
-into a building.
+`codecity.html` renders the same TSV as a Three.js CodeCity. Drag to pan.
+Cmd/Ctrl-drag on **empty ground** rotates. Over a **building or a jumpable
+road**, Cmd/Ctrl is open-in-editor (double-click the building, click the
+road) and that gesture does not orbit. Scroll zooms around the mouse. The
+2-D layout is computed in-browser with D3 treemap; Three.js extrudes each
+file tile into a building.
 
 **Prior art, and the page says so.** The software city — a building per
 compilation unit, a district per containment, metrics mapped to height,
@@ -1041,7 +1052,7 @@ guard Windows locale codecs from eating ⌘ / ⌥ in the page.
 | `CODECITY_COVERAGE_EXCLUDE` | optional repo-relative globs; drop matching buildings (after include) |
 | `CODECITY_COVERAGE_BASELINE` | repo-relative path of a committed `crap-per-file.tsv`. Read out of git **at the diff's base ref** to give CRAP and coverage a "before" ([the baseline](#the-before-side-a-file-the-base-branch-carries)) |
 | `HEATMAP_TITLE` / `HEATMAP_SUBTITLE` / `CODECITY_TITLE` | page heading text |
-| `HEATMAP_OPEN_IN` | `vscode` to enable ⌘/Ctrl-click-to-open (empty = off). Codemap also offers IntelliJ in-page. |
+| `HEATMAP_OPEN_IN` | Codemap only. `vscode` (the `generate.py` default) or `intellij` enables ⌘/Ctrl-click-to-open and the in-page picker. Empty string = off. Unset is **not** off when you go through `generate.py`. The 3-D city always opens VS Code. |
 | `HEATMAP_REPO_ABS` | absolute repo root for editor links (default: `HEATMAP_REPO`) |
 | `HEATMAP_CHANGED_BASE` | optional override of the auto-detected change-set base ref |
 

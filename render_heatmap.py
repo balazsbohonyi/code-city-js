@@ -383,15 +383,18 @@ if OPEN_IN:
     editor_script = """
 const REPO_ABS = __REPO_ABS__;
 function openInEditor(rel) {
-  const abs = REPO_ABS + '/' + rel;
+  // Same Windows form as the 3-D city: vscode://file/D:/... not vscode://fileD:\\...
+  // (Backslash regex is quadrupled: Python string -> JS source.)
+  const abs = (REPO_ABS + "/" + rel).replace(/\\\\/g, "/");
+  const path = abs.startsWith("/") ? abs : "/" + abs;
   const editorEl = document.getElementById('editor');
   const mode = editorEl ? editorEl.value : 'vscode';
   if (mode === 'intellij') {
     // IntelliJ built-in web server. Requires the IDE running with
     // Settings > Build, Execution, Deployment > Debugger > "Allow unsigned requests".
-    fetch('http://localhost:63342/api/file' + encodeURI(abs), { mode: 'no-cors' }).catch(function () {});
+    fetch('http://localhost:63342/api/file' + encodeURI(path), { mode: 'no-cors' }).catch(function () {});
   } else {
-    window.location.href = 'vscode://file' + encodeURI(abs);
+    window.location.href = "vscode://file" + encodeURI(path);
   }
 }
 document.getElementById('treemap').on('plotly_treemapclick', function (d) {

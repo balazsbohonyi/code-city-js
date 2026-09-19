@@ -50,6 +50,17 @@ def test_heatmap_html_keeps_command_glyph(tmp_path: Path) -> None:
     assert "\u2318".encode("utf-8") in raw
 
 
+def test_heatmap_html_normalises_vscode_path(tmp_path: Path) -> None:
+    (tmp_path / "codemap.tsv").write_text(
+        FILE_HEADER + "src/App.vue\t100\t20\t1\t0\t50.00\t0.00\t0.000\t0\t0.00\t0\t0\t1\t0.000\t\t\t\t\t\t\t\n",
+        encoding="utf-8",
+    )
+    _run_renderer("render_heatmap.py", tmp_path, {"HEATMAP_REPO_ABS": r"D:\fake\repo"})
+    html = (tmp_path / "codemap.html").read_text(encoding="utf-8")
+    assert "vscode://file" in html
+    assert 'abs.startsWith("/")' in html
+
+
 def test_city_html_keeps_command_glyph(tmp_path: Path) -> None:
     (tmp_path / "codemap.tsv").write_text(
         FILE_HEADER + "src/App.vue\t100\t20\t1\t0\t50.00\t0.00\t0.000\t0\t0.00\t0\t0\t1\t0.000\t\t\t\t\t\t\t\n",
