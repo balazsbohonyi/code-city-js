@@ -115,7 +115,8 @@ The city does not special-case “this is a React app.” It special-cases file
 kinds.
 
 Cognitive complexity and coupling today walk JavaScript, TypeScript, JSX/TSX,
-and Vue `<script>` / `<script setup>` — not Vue templates. Support for
+and Vue Single-File Components (both `<script>` and `<template>` directives
+and expressions; ADR 0012). Support for
 Angular, Svelte, and Astro is coming.
 
 ## How this differs from the Java Code City
@@ -130,7 +131,7 @@ rows the city already knows how to draw.
 | Building | class (almost always one `.java` file) | one **source file** |
 | District | Java package; `_district` collapses every same-named folder | **full dotted folder path** (`src.components.charts`) so three `components/` folders stay three districts |
 | Module | Maven module (`pom.xml`) | nearest **`package.json`** |
-| Complexity (height) | tree-sitter Java, summed over methods | tree-sitter **JS/TS** + Vue `<script>`; `??` counts in boolean groups, `?.` does not; templates unscored |
+| Complexity (height) | tree-sitter Java, summed over methods | tree-sitter **JS/TS** + Vue `<script>` & `<template>` (ADR 0012); `??` counts in boolean groups, `?.` does not; template directives & expressions scored; `v-show` ignored |
 | Coupling (⌥ roads) | Java identifier scan | **dependency-cruiser** (Node); `import type` dropped; barrels resolve-through; no `node_modules` |
 | Coverage / CRAP | JaCoCo XML (cyclomatic + **line** coverage in one report) | Istanbul **`coverage-final.json`** + tree-sitter **cyclomatic**; **statement** coverage; `generate.py` never runs tests |
 | Without extra toolchain | Python + git | Python + git still build a city; **no Node** → fan-in/out 0, roads off |
@@ -166,7 +167,7 @@ does not gate the city.
 | `commits` | non-merge commits that touched the file (full history) |
 | `bug_commits` | of those, commits whose subject matches `fix` / `fixed` / `fixes` / `bugfix` (Conventional Commits and the plain “Fix …” verb) |
 | `committers` | distinct author emails that touched the file |
-| `cognitive_complexity` | Sonar-style cognitive complexity (tree-sitter, summed over functions). JS/TS/JSX/TSX, plus Vue `<script>` / `<script setup>` — not templates. `??` counts in boolean groups (intentional); `?.` does not. |
+| `cognitive_complexity` | Sonar-style cognitive complexity (tree-sitter, summed over functions). JS/TS/JSX/TSX, plus Vue Single-File Components (`<script>` + `<template>` directives & expressions; ADR 0012). `??` counts in boolean groups (intentional); `?.` does not; `v-show` ignored. |
 | `cochange_out` | of the commits that touched this file, the share that also reached outside its folder, weighted by how far out ([Change coupling](#change-coupling--the-crime-scene)) |
 | `fan_in` / `fan_out` | how many **repo** files import this file / it imports (internal coupling only); `coupling-edges.tsv` holds the same relation edge by edge, weighted by how often the source names the target — what the Coupling-streets overlay draws |
 | `coverage` | statement coverage %, from an Istanbul report ([CRAP and coverage](#crap-and-coverage--the-two-metrics-that-need-the-tests-to-have-run)) |

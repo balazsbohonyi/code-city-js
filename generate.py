@@ -149,7 +149,7 @@ def main(argv: list[str]) -> int:
     print(f"repo:  {repo}", flush=True)
     print(f"out:   {out}", flush=True)
 
-    print("[1/7] cognitive complexity (tree-sitter JS/TS + Vue script)...", flush=True)
+    print("[1/7] cognitive complexity (tree-sitter JS/TS + Vue script & template)...", flush=True)
     _run("compute_complexity.py", env)
 
     print("[2/7] coupling (dependency-cruiser fan-in/out + edges)...", flush=True)

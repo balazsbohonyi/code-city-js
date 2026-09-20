@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
-"""Sonar-style cognitive complexity for JS/TS (and Vue SFC scripts).
+"""Sonar-style cognitive complexity for JS/TS (and Vue SFC scripts and templates).
 
 Ports the algorithm used by Victor's Java Code City
 (https://www.sonarsource.com/docs/CognitiveComplexity.pdf) onto
 tree-sitter-javascript / tree-sitter-typescript. Writes
 `complexity-per-file.tsv` for `build_heatmap.py` to join.
 
-Intentional JS-city delta (ADR 0009): `??` counts in boolean groups like
-`&&` / `||`. Optional chaining (`?.`) does not. Vue templates are not scored
-— only inline `<script>` / `<script setup>`.
+Intentional JS-city delta (ADR 0009, ADR 0012): `??` counts in boolean groups like
+`&&` / `||`. Optional chaining (`?.`) does not. Vue SFCs score inline
+`<script>` / `<script setup>` plus template directives and expressions (ADR 0012).
 """
 from __future__ import annotations
 
 import os
 import re
 import sys
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Optional
 
@@ -176,8 +177,6 @@ def is_top_level_boolean(node: Node, src: bytes) -> bool:
     if parent is None:
         return True
     if parent.type == "parenthesized_expression":
-        # Still top of the *logical* chain for Sonar if the paren wraps the group;
-        # only a parent binary with a bool op means we are not the top.
         return True
     if parent.type == "binary_expression" and binary_op(parent, src) in BOOL_OPS:
         return False
@@ -269,7 +268,12 @@ def _function_body(node: Node) -> Optional[Node]:
 # ---------------------------------------------------------------------------
 
 
-def compute_body_complexity(body: Node, src: bytes, enclosing_name: Optional[str]) -> int:
+def compute_body_complexity(
+    body: Node,
+    src: bytes,
+    enclosing_name: Optional[str],
+    initial_nesting: int = 0,
+) -> int:
     """Cognitive complexity of one function body (Sonar rules + ?? delta)."""
     if body is None:
         return 0
@@ -399,12 +403,445 @@ def compute_body_complexity(body: Node, src: bytes, enclosing_name: Optional[str
             total += 1  # plain else
             walk(target, nesting + 1)
 
-    walk(body, 0)
+    walk(body, initial_nesting)
     return total
 
 
 def compute_function_complexity(fn_node: Node, src: bytes) -> int:
     return compute_body_complexity(_function_body(fn_node), src, get_name(fn_node, src))
+
+
+def score_expression(
+    expr_str: str,
+    nesting: int = 0,
+    errors: Optional[list[str]] = None,
+) -> int:
+    """Score cognitive complexity of a JS expression at a given nesting level.
+
+    Ternary expressions count as 1 + nesting.
+    Boolean groups (&&, ||, ??) count without nesting penalty.
+    """
+    expr_str = expr_str.strip()
+    if not expr_str:
+        return 0
+    src = expr_str.encode("utf-8")
+    try:
+        tree = _parser_for(JS_LANG).parse(src)
+        root = tree.root_node
+        if root.has_error and errors is not None:
+            hint = first_parse_error_hint(root, src)
+            snippet = expr_str[:30].replace("\n", " ")
+            errors.append(f"{snippet!r}: {hint}")
+        if root.type != "program":
+            return 0
+        total = 0
+        for c in root.children:
+            if c.is_named:
+                total += compute_body_complexity(c, src, None, initial_nesting=nesting)
+        return total
+    except Exception as e:
+        if errors is not None:
+            snippet = expr_str[:30].replace("\n", " ")
+            errors.append(f"{snippet!r}: {e}")
+        return 0
+
+
+# ---------------------------------------------------------------------------
+# Vue SFC template extract and complexity
+# ---------------------------------------------------------------------------
+
+VOID_TAGS = frozenset({
+    "area",
+    "base",
+    "br",
+    "col",
+    "embed",
+    "hr",
+    "img",
+    "input",
+    "link",
+    "meta",
+    "param",
+    "source",
+    "track",
+    "wbr",
+})
+
+
+def find_tag_end(source: str, start_index: int) -> int:
+    """Return the index immediately after the closing '>' of an opening tag.
+
+    Correctly skips '>' characters inside single- or double-quoted attribute strings,
+    such as `<template v-if="count > 0">`.
+    """
+    i = start_index
+    length = len(source)
+    in_quote: Optional[str] = None
+    while i < length:
+        ch = source[i]
+        if in_quote is not None:
+            if ch == in_quote:
+                in_quote = None
+        elif ch in ('"', "'"):
+            in_quote = ch
+        elif ch == ">":
+            return i + 1
+        i += 1
+    return length
+
+
+def find_mustache_end(source: str, start_index: int) -> int:
+    """Return the index immediately after closing '}}' for a mustache.
+
+    Correctly handles string literals (single, double quotes, backticks)
+    within the interpolation so that '}}' inside a string does not terminate early.
+    """
+    i = start_index + 2
+    length = len(source)
+    in_quote: Optional[str] = None
+    while i < length:
+        ch = source[i]
+        if in_quote is not None:
+            if ch == "\\" and in_quote in ('"', "'", "`"):
+                i += 2
+                continue
+            if ch == in_quote:
+                in_quote = None
+        elif ch in ('"', "'", "`"):
+            in_quote = ch
+        elif ch == "}" and i + 1 < length and source[i + 1] == "}":
+            return i + 2
+        i += 1
+    return length
+
+
+def has_src_attr(attrs: str) -> bool:
+    """Return True if attrs contains a top-level unquoted 'src' attribute.
+
+    Avoids false positives from :src, v-bind:src, data-src, or JS expressions
+    like v-if="src === 'a'" or v-if="a && src == 1".
+    """
+    i = 0
+    length = len(attrs)
+    while i < length:
+        while i < length and attrs[i].isspace():
+            i += 1
+        if i >= length:
+            break
+        name_start = i
+        while i < length and not attrs[i].isspace() and attrs[i] not in ("=", ">", "/"):
+            i += 1
+        if name_start == i:
+            # Skip unexpected punctuation (e.g. '/' or '>' or '=') so loop never hangs
+            i += 1
+            continue
+        name = attrs[name_start:i].lower()
+        while i < length and attrs[i].isspace():
+            i += 1
+        if i < length and attrs[i] == "=":
+            i += 1
+            while i < length and attrs[i].isspace():
+                i += 1
+            if i < length and attrs[i] in ('"', "'"):
+                quote = attrs[i]
+                i += 1
+                while i < length and attrs[i] != quote:
+                    i += 1
+                if i < length:
+                    i += 1
+            else:
+                while i < length and not attrs[i].isspace():
+                    i += 1
+        if name == "src":
+            return True
+    return False
+
+
+def find_template_body_end(source: str, content_start: int) -> int:
+    """Return the index immediately after the matching top-level '</template>'.
+
+    Skips HTML comments (<!-- ... -->), interpolations ({{ ... }}), RCDATA/rawtext
+    elements (<textarea>, <title>, <script>, <style>), and quoted attribute values
+    in tags so that strings or comments containing '</template>' do not close the
+    template early. Also handles self-closing <template ... /> without incrementing depth.
+    """
+    depth = 1
+    cur = content_start
+    length = len(source)
+    token_re = re.compile(
+        r"<!--|{{|</?template\b|<(textarea|title|script|style)\b|<[a-zA-Z][^\s/>]*",
+        re.IGNORECASE,
+    )
+    while cur < length:
+        m = token_re.search(source, cur)
+        if not m:
+            return length
+        tok = m.group(0).lower()
+        match_start = m.start()
+
+        if tok == "<!--":
+            end_c = source.find("-->", match_start + 4)
+            if end_c == -1:
+                return length
+            cur = end_c + 3
+            continue
+
+        if tok == "{{":
+            cur = find_mustache_end(source, match_start)
+            continue
+
+        # Skip RCDATA / rawtext tags (<textarea>, <title>, <script>, <style>)
+        raw_tag = m.group(1)
+        if raw_tag:
+            tag_name = raw_tag.lower()
+            tag_end = find_tag_end(source, match_start)
+            tag_str = source[match_start:tag_end].rstrip()
+            if tag_str.endswith("/>"):
+                cur = tag_end
+                continue
+            close_m = re.search(
+                rf"</{re.escape(tag_name)}\s*>", source[tag_end:], re.IGNORECASE
+            )
+            if close_m:
+                cur = tag_end + close_m.end()
+            else:
+                cur = length
+            continue
+
+        if tok.startswith("</template"):
+            gt = source.find(">", match_start)
+            depth -= 1
+            if depth == 0:
+                return (gt + 1) if gt != -1 else m.end()
+            cur = (gt + 1) if gt != -1 else m.end()
+            continue
+
+        if tok.startswith("<template"):
+            tag_end = find_tag_end(source, match_start)
+            tag_str = source[match_start:tag_end].rstrip()
+            if not tag_str.endswith("/>"):
+                depth += 1
+            cur = tag_end
+            continue
+
+        # Any other tag (<div ...>, <span ...>): skip past closing '>' respecting quotes
+        cur = find_tag_end(source, match_start)
+
+    return length
+
+
+def extract_vue_template(source: str) -> Optional[str]:
+    """Return top-level SFC <template> block(s) from a Vue component.
+
+    Parses top-level SFC blocks:
+    - Skips HTML comments (<!-- ... -->).
+    - Extracts top-level <template> blocks, skipping external ones with 'src='
+      (including self-closing <template src="..." /> and paired tags with fallback markup).
+    - Uses find_template_body_end to balance nested <template> tags while ignoring
+      comments, interpolations ({{ '</template>' }}), and quoted strings.
+    - Skips any other top-level block (<script>, <style>, and custom blocks like
+      <docs>, <i18n>, etc.) so templates inside docs/samples are not extracted.
+    - Supports multiple top-level <template> blocks (Vue 3 fragments).
+    """
+    pos = 0
+    length = len(source)
+    templates: list[str] = []
+    top_token_re = re.compile(r"<!--|<([a-zA-Z0-9_-]+)\b", re.IGNORECASE)
+
+    while pos < length:
+        m = top_token_re.search(source, pos)
+        if not m:
+            break
+        match_start = m.start()
+        token = m.group(0).lower()
+
+        if token == "<!--":
+            end_comment = source.find("-->", match_start + 4)
+            if end_comment == -1:
+                break
+            pos = end_comment + 3
+            continue
+
+        tag_name = m.group(1).lower()
+        tag_end = find_tag_end(source, match_start)
+        tag_str = source[match_start:tag_end].rstrip()
+        is_self_closing = tag_str.endswith("/>")
+
+        if tag_name == "template":
+            attrs = source[
+                match_start + 9 : (tag_end - 2 if is_self_closing else tag_end - 1)
+            ]
+            if is_self_closing:
+                pos = tag_end
+                continue
+            end_template = find_template_body_end(source, tag_end)
+            if has_src_attr(attrs):
+                pos = end_template
+                continue
+            templates.append(source[match_start:end_template])
+            pos = end_template
+            continue
+
+        # Any other top-level block (script, style, custom blocks like docs, i18n)
+        if is_self_closing:
+            pos = tag_end
+            continue
+
+        close_m = re.search(
+            rf"</{re.escape(tag_name)}\s*>", source[tag_end:], re.IGNORECASE
+        )
+        if close_m:
+            pos = tag_end + close_m.end()
+        else:
+            pos = tag_end
+
+    if not templates:
+        return None
+    return "\n".join(templates)
+
+
+class VueTemplateParser(HTMLParser):
+    def __init__(self, interpolations: list[str]):
+        super().__init__()
+        self.interpolations = interpolations
+        self.stack: list[tuple[str, int]] = []
+        self.total_complexity = 0
+        self.units = 0
+        self.v_pre_stack: list[str] = []
+        self.errors: list[str] = []
+
+    def current_nesting(self) -> int:
+        return sum(incr for _, incr in self.stack)
+
+    def _score(self, expr: str, nesting: int) -> int:
+        return score_expression(expr, nesting, errors=self.errors)
+
+    def process_start(
+        self,
+        tag: str,
+        attrs: list[tuple[str, Optional[str]]],
+        is_self_closing: bool = False,
+    ):
+        tag_lower = tag.lower()
+        attrs_dict = {k.lower(): (v or "") for k, v in attrs if k is not None}
+
+        if "v-pre" in attrs_dict or self.v_pre_stack:
+            if not (tag_lower in VOID_TAGS or is_self_closing):
+                self.v_pre_stack.append(tag_lower)
+            return
+
+        nesting = self.current_nesting()
+        tag_added_nesting = 0
+
+        # Structural directives (same-element v-if and v-for: Vue 3 evaluates v-if first)
+        if "v-if" in attrs_dict:
+            self.total_complexity += 1 + nesting
+            self.units += 1
+            tag_added_nesting += 1
+            expr = attrs_dict["v-if"]
+            self.total_complexity += self._score(expr, nesting)
+        elif "v-else-if" in attrs_dict:
+            self.total_complexity += 1
+            self.units += 1
+            tag_added_nesting += 1
+            expr = attrs_dict["v-else-if"]
+            self.total_complexity += self._score(expr, nesting)
+        elif "v-else" in attrs_dict:
+            self.total_complexity += 1
+            self.units += 1
+            tag_added_nesting += 1
+
+        if "v-for" in attrs_dict:
+            effective_nesting = nesting + tag_added_nesting
+            self.total_complexity += 1 + effective_nesting
+            self.units += 1
+            tag_added_nesting += 1
+            expr = attrs_dict["v-for"]
+            parts = re.split(r"\s+(?:in|of)\s+", expr, maxsplit=1)
+            rhs = parts[1] if len(parts) > 1 else expr
+            self.total_complexity += self._score(rhs, effective_nesting)
+
+        # Dynamic attribute, event, and model bindings (v-show ignored: CSS toggle)
+        for name, val in attrs_dict.items():
+            if name in ("v-if", "v-else-if", "v-else", "v-for", "v-show", "v-pre"):
+                continue
+            if (
+                name.startswith(":")
+                or name.startswith("v-bind:")
+                or name == "v-bind"
+                or name.startswith("v-bind.")
+                or name.startswith("@")
+                or name.startswith("v-on:")
+                or name in ("v-html", "v-text")
+                or name == "v-model"
+                or name.startswith("v-model:")
+                or name.startswith("v-model.")
+            ):
+                if val:
+                    self.total_complexity += self._score(
+                        val, nesting + tag_added_nesting
+                    )
+
+        is_void = tag_lower in VOID_TAGS or is_self_closing
+        if not is_void:
+            self.stack.append((tag_lower, tag_added_nesting))
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, Optional[str]]]):
+        self.process_start(tag, attrs, is_self_closing=False)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, Optional[str]]]):
+        self.process_start(tag, attrs, is_self_closing=True)
+
+    def handle_endtag(self, tag: str):
+        tag_lower = tag.lower()
+        if tag_lower in VOID_TAGS:
+            return
+        if self.v_pre_stack:
+            for i in range(len(self.v_pre_stack) - 1, -1, -1):
+                if self.v_pre_stack[i] == tag_lower:
+                    del self.v_pre_stack[i:]
+                    return
+            return
+        for i in range(len(self.stack) - 1, -1, -1):
+            if self.stack[i][0] == tag_lower:
+                del self.stack[i:]
+                break
+
+    def handle_comment(self, data: str):
+        if self.v_pre_stack:
+            return
+        if data.startswith("VUE_INTERP:"):
+            idx = int(data[11:])
+            expr = self.interpolations[idx].strip()
+            if expr:
+                nesting = self.current_nesting()
+                self.total_complexity += self._score(expr, nesting)
+
+
+def complexity_of_vue_template(template_str: str) -> tuple[int, int, bool, str]:
+    """Return (complexity, unit_count, had_error, error_hint) for a Vue template.
+
+    Strips HTML comments first so mustaches in comments are ignored.
+    Replaces {{ ... }} mustaches with unique comment tokens so that '<' operators
+    within interpolations (e.g. {{ count < 10 ? 'lo' : 'hi' }}) survive HTMLParser.
+    """
+    no_comments = re.sub(r"<!--.*?-->", "", template_str, flags=re.DOTALL)
+    interps: list[str] = []
+
+    def _sub(m: re.Match) -> str:
+        idx = len(interps)
+        interps.append(m.group(1))
+        return f"<!--VUE_INTERP:{idx}-->"
+
+    processed = re.sub(r"\{\{(.*?)\}\}", _sub, no_comments, flags=re.DOTALL)
+    parser = VueTemplateParser(interps)
+    try:
+        parser.feed(processed)
+        had_error = bool(parser.errors)
+        hint = parser.errors[0] if had_error else ""
+        return parser.total_complexity, parser.units, had_error, hint
+    except Exception as e:
+        return parser.total_complexity, parser.units, True, str(e)
 
 
 # ---------------------------------------------------------------------------
@@ -420,10 +857,6 @@ def collect_score_units(root: Node) -> list[Node]:
         t = node.type
         if t in FUNCTION_DECL:
             units.append(node)
-            # Still walk children so nested function_declarations are collected,
-            # but skip the body of this function for *expression* discovery? No —
-            # we need nested decls inside the body. Recurse into all children;
-            # FUNCTION_DECL handler returns early in the complexity walk only.
             for c in node.children:
                 visit(c)
             return
@@ -440,12 +873,7 @@ def collect_score_units(root: Node) -> list[Node]:
 
 
 def first_parse_error_hint(root: Node, src: bytes) -> str:
-    """Short hint for stderr when tree-sitter marks ERROR/missing nodes.
-
-    Common JS/TSX case: bare ``&`` in JSX text (``Title & Subtitle``) — the
-    grammar expects ``&amp;`` or a ``{...}`` expression. We still score the
-    file; this is a warning, not a drop.
-    """
+    """Short hint for stderr when tree-sitter marks ERROR/missing nodes."""
     stack = [root]
     while stack:
         n = stack.pop()
@@ -472,9 +900,6 @@ def complexity_of_source(src: bytes, lang: Language) -> tuple[int, int, bool, st
     for u in units:
         total += compute_function_complexity(u, src)
 
-    # Top-level statements outside any scored unit (scripts / bare modules).
-    # Avoid double-counting: walk program children that are not units and not
-    # containers we already fully covered via units.
     covered = {(u.start_byte, u.end_byte) for u in units}
 
     def top_level_contrib(node: Node) -> int:
@@ -483,7 +908,6 @@ def complexity_of_source(src: bytes, lang: Language) -> tuple[int, int, bool, st
         if node.type in FUNCTION_DECL or (node.type in FUNCTION_EXPR and _is_scored_unit_expr(node)):
             return 0
         if node.type in CLASS_LIKE:
-            # methods collected as units; no extra top-level
             return 0
         if node.type in (
             "export_statement",
@@ -499,8 +923,6 @@ def complexity_of_source(src: bytes, lang: Language) -> tuple[int, int, bool, st
             "try_statement",
             "labeled_statement",
         ):
-            # If this node *contains* only scored units (e.g. export function),
-            # still skip adding the wrapper; units already counted.
             if node.type == "export_statement":
                 for c in node.children:
                     if c.is_named and (
@@ -510,7 +932,6 @@ def complexity_of_source(src: bytes, lang: Language) -> tuple[int, int, bool, st
                     ):
                         return 0
             if node.type in ("lexical_declaration", "variable_declaration"):
-                # const f = () => {} — unit already counted; no top-level add.
                 for c in node.children:
                     if c.type == "variable_declarator":
                         val = c.child_by_field_name("value")
@@ -544,9 +965,13 @@ def lang_for_path(path: Path, vue_lang: str | None = None) -> Language:
     return JS_LANG
 
 
-def process_file(abs_path: Path) -> tuple[str, int, int, bool, str]:
+def process_file(abs_path: Path, repo_root: Path | None = None) -> tuple[str, int, int, bool, str]:
     """Return (rel, complexity, unit_count, error, error_hint)."""
-    rel = posix_rel(str(abs_path), str(REPO))
+    root = repo_root or REPO
+    try:
+        rel = posix_rel(str(abs_path), str(root))
+    except ValueError:
+        rel = abs_path.name
     suf = abs_path.suffix.lower()
     try:
         raw = abs_path.read_bytes()
@@ -557,8 +982,6 @@ def process_file(abs_path: Path) -> tuple[str, int, int, bool, str]:
     if suf in VUE_EXTS:
         text = raw.decode("utf-8", errors="replace")
         scripts = extract_vue_scripts(text)
-        if not scripts:
-            return rel, 0, 0, False, ""
         total = 0
         units = 0
         err = False
@@ -571,6 +994,15 @@ def process_file(abs_path: Path) -> tuple[str, int, int, bool, str]:
             if e and not hint:
                 hint = h
             err = err or e
+
+        tmpl = extract_vue_template(text)
+        if tmpl:
+            tc, tu, te, th = complexity_of_vue_template(tmpl)
+            total += tc
+            if te and not hint:
+                hint = th
+            err = err or te
+
         return rel, total, units, err, hint
 
     if suf not in SCORE_EXTS:
